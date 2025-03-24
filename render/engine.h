@@ -1,0 +1,39 @@
+#pragma once
+
+#include "canvas.h"
+
+#include "vk_base.h"
+
+#include <optional>
+
+namespace Render {
+
+VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
+
+class Engine {
+public:
+  Engine(Canvas &canvas);
+
+private:
+  std::pair<vk::PhysicalDevice, uint32_t>
+  select_device(const std::vector<vk::PhysicalDevice> &devices) const;
+
+  bool has_required_vulkan(vk::PhysicalDevice device) const;
+  bool has_required_features(vk::PhysicalDevice device) const;
+  std::optional<uint32_t>
+  find_suitable_queue_family(vk::PhysicalDevice device) const;
+
+  vk::Device create_device();
+
+private:
+  vk::UniqueInstance instance;
+  vk::UniqueSurfaceKHR surface;
+  vk::PhysicalDevice gpu;
+  uint32_t queue_family_index;
+  vk::UniqueDevice device;
+};
+
+} // namespace Render
