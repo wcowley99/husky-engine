@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvas.h"
+#include "swapchain.h"
 
 #include "vk_base.h"
 
@@ -17,6 +18,8 @@ class Engine {
 public:
   Engine(Canvas &canvas);
 
+  void draw();
+
 private:
   std::pair<vk::PhysicalDevice, uint32_t>
   select_device(const std::vector<vk::PhysicalDevice> &devices) const;
@@ -32,8 +35,14 @@ private:
   vk::UniqueInstance instance;
   vk::UniqueSurfaceKHR surface;
   vk::PhysicalDevice gpu;
+  vk::Queue graphics_queue;
   uint32_t queue_family_index;
   vk::UniqueDevice device;
+  std::unique_ptr<Swapchain> swapchain;
+
+  FrameData frames[NUM_FRAMES];
+  uint32_t frame_count = 0;
+  FrameData &get_current_frame() { return frames[frame_count % NUM_FRAMES]; }
 };
 
 } // namespace Render

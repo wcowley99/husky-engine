@@ -10,21 +10,22 @@
 namespace Render {
 
 Window::Window(const std::string &title, uint32_t width, uint32_t height) {
+  this->width = width;
+  this->height = height;
+
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     throw std::runtime_error(
         std::string("SDL could not initialize! SDL error: ") + SDL_GetError());
   }
 
-  this->window =
-      SDL_CreateWindow("Hello, World", 1920, 1080, SDL_WINDOW_VULKAN);
+  this->window = SDL_CreateWindow("Hello, World", width, height,
+                                  SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
   if (!window) {
     throw std::runtime_error(
         std::string("SDL could not create window! SDL error: ") +
         SDL_GetError());
   }
-
-  this->surface = SDL_GetWindowSurface(window);
 }
 
 Render::Window::~Window() {
@@ -34,7 +35,12 @@ Render::Window::~Window() {
 
 vk::SurfaceKHR Window::create_surface(vk::Instance instance) {
   VkSurfaceKHR surface_handle;
-  SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface_handle);
+  if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface_handle)) {
+    throw std::runtime_error(
+        std::string("SDL could not create window! SDL error: ") +
+        SDL_GetError());
+  }
+
   return surface_handle;
 }
 
@@ -44,11 +50,8 @@ std::vector<const char *> Window::required_instance_extensions() {
   return std::vector<const char *>(sdl_extensions, sdl_extensions + count);
 }
 
-void Window::refresh() {
-  SDL_FillSurfaceRect(surface, nullptr,
-                      SDL_MapSurfaceRGB(surface, 0xFF, 0x00, 0x00));
+vk::Extent2D Window::extent() { return vk::Extent2D{width, height}; }
 
-  SDL_UpdateWindowSurface(window);
-}
+void Window::refresh() { SDL_UpdateWindowSurface(window); }
 
 } // namespace Render

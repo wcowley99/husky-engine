@@ -1,5 +1,6 @@
 #include "engine.h"
 
+#include <cmath>
 #include <iostream>
 
 namespace Render {
@@ -62,6 +63,92 @@ Engine::Engine(Canvas &canvas) {
 
   this->device = vk::UniqueDevice(create_device());
   VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
+
+  this->graphics_queue = device->getQueue(queue_family_index, 0);
+
+  this->swapchain = Swapchain::create(device.get(), surface.get(), gpu);
+
+  vk::CommandPoolCreateInfo command_pool_info(
+      vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_family_index);
+
+  vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
+  vk::SemaphoreCreateInfo semaphore_info;
+  for (auto &frame_data : frames) {
+    frame_data.pool = device->createCommandPool(command_pool_info);
+    vk::CommandBufferAllocateInfo alloc_info(
+        frame_data.pool, vk::CommandBufferLevel::ePrimary, 1);
+    frame_data.buffer = device->allocateCommandBuffers(alloc_info)[0];
+    frame_data.render_fence = device->createFence(fence_info);
+    frame_data.swapchain_semaphore = device->createSemaphore(semaphore_info);
+    frame_data.render_semaphore = device->createSemaphore(semaphore_info);
+  }
+}
+
+void Engine::draw() {
+  auto &current_frame = get_current_frame();
+  vk_assert(device->waitForFences(1, &current_frame.render_fence, vk::True,
+                                  1000000000));
+
+  auto result = swapchain->next_image_index(current_frame.swapchain_semaphore);
+
+  if (result.result == vk::Result::eErrorOutOfDateKHR) {
+    swapchain->recreate();
+    return;
+  }
+
+  vk_assert(device->resetFences(1, &current_frame.render_fence));
+
+  if (result.result != vk::Result::eSuccess &&
+      result.result != vk::Result::eSuboptimalKHR) {
+    std::cout << result.result << std::endl;
+    throw std::runtime_error("Failed to acquire Next Image: ");
+  }
+  auto image_index = result.value;
+  auto swapchain_image = swapchain->image(image_index);
+
+  current_frame.buffer.reset();
+  vk::CommandBufferBeginInfo begin_info(
+      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+  current_frame.buffer.begin(begin_info);
+
+  transition_image(current_frame.buffer, swapchain_image,
+                   vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+
+  std::array<float, 4> colors = {
+      0.0f, 0.0f, std::abs(std::sin(frame_count / 120.0f)), 1.0f};
+  vk::ClearColorValue color(colors);
+
+  vk::ImageSubresourceRange clear_range(vk::ImageAspectFlagBits::eColor, 0,
+                                        vk::RemainingMipLevels, 0,
+                                        vk::RemainingArrayLayers);
+  current_frame.buffer.clearColorImage(
+      swapchain_image, vk::ImageLayout::eGeneral, &color, 1, &clear_range);
+  transition_image(current_frame.buffer, swapchain_image,
+                   vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
+
+  current_frame.buffer.end();
+
+  vk::CommandBufferSubmitInfo submit_info(current_frame.buffer);
+  vk::SemaphoreSubmitInfo wait_info(
+      current_frame.swapchain_semaphore, 1,
+      vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+  vk::SemaphoreSubmitInfo signal_info(current_frame.render_semaphore, 1,
+                                      vk::PipelineStageFlagBits2::eAllGraphics);
+  vk::SubmitInfo2 submit({}, 1, &wait_info, 1, &submit_info, 1, &signal_info);
+  if (graphics_queue.submit2(1, &submit, current_frame.render_fence) !=
+      vk::Result::eSuccess) {
+    throw std::runtime_error("Failed Submit2");
+  }
+
+  auto present = swapchain->get_present_info(&current_frame.render_semaphore,
+                                             &image_index);
+  auto present_result = graphics_queue.presentKHR(present);
+  if (present_result == vk::Result::eErrorOutOfDateKHR ||
+      present_result == vk::Result::eSuboptimalKHR) {
+    swapchain->recreate();
+  }
+
+  frame_count += 1;
 }
 
 std::pair<vk::PhysicalDevice, uint32_t>
@@ -110,6 +197,8 @@ Engine::find_suitable_queue_family(vk::PhysicalDevice device) const {
               << (uint32_t)(prop.queueFlags & vk::QueueFlagBits::eGraphics)
               << std::endl;
     vk::Bool32 supported;
+
+    printf("instance: %p, surface: %p", *instance, *surface);
     vk_assert(device.getSurfaceSupportKHR(i, *surface, &supported));
 
     std::cerr << " === [" << i << "]: Surface: " << supported << std::endl;

@@ -13,6 +13,7 @@ public:
 
   virtual vk::SurfaceKHR create_surface(vk::Instance instance) = 0;
   virtual std::vector<const char *> required_instance_extensions() = 0;
+  virtual vk::Extent2D extent() = 0;
 };
 
 } // namespace Render

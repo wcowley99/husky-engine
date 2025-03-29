@@ -16,12 +16,14 @@ public:
 
   virtual vk::SurfaceKHR create_surface(vk::Instance instance) override;
   virtual std::vector<const char *> required_instance_extensions() override;
+  virtual vk::Extent2D extent() override;
 
   void refresh();
 
 private:
+  uint32_t width;
+  uint32_t height;
   SDL_Window *window;
-  SDL_Surface *surface;
 };
 
 } // namespace Render

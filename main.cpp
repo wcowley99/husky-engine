@@ -3,6 +3,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <iostream>
+
 int main(int argc, char *argv[]) {
   Render::Window window("Husky Engine", 1920, 1080);
 
@@ -19,6 +21,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    engine.draw();
     window.refresh();
   }
 

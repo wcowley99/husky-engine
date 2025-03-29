@@ -6,6 +6,18 @@
 
 namespace Render {
 
+struct FrameData {
+  vk::CommandPool pool;
+  vk::CommandBuffer buffer;
+  vk::Semaphore swapchain_semaphore, render_semaphore;
+  vk::Fence render_fence;
+};
+
+constexpr uint32_t NUM_FRAMES = 3;
+
 void vk_assert(vk::Result result);
+
+void transition_image(vk::CommandBuffer cmd, vk::Image image,
+                      vk::ImageLayout current, vk::ImageLayout next);
 
 } // namespace Render
