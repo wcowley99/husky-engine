@@ -7,10 +7,10 @@
 namespace Render {
 
 struct FrameData {
-  vk::CommandPool pool;
+  vk::UniqueCommandPool pool;
   vk::CommandBuffer buffer;
-  vk::Semaphore swapchain_semaphore, render_semaphore;
-  vk::Fence render_fence;
+  vk::UniqueSemaphore swapchain_semaphore, render_semaphore;
+  vk::UniqueFence render_fence;
 };
 
 constexpr uint32_t NUM_FRAMES = 3;

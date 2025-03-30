@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
 
 namespace Render {
@@ -29,6 +30,7 @@ Window::Window(const std::string &title, uint32_t width, uint32_t height) {
 }
 
 Render::Window::~Window() {
+  std::cout << "destroying window" << std::endl;
   SDL_DestroyWindow(window);
   SDL_Quit();
 }

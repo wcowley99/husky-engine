@@ -61,7 +61,7 @@ Engine::Engine(Canvas &canvas) {
   this->gpu = result.first;
   this->queue_family_index = result.second;
 
-  this->device = vk::UniqueDevice(create_device());
+  this->device = create_device();
   VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
 
   this->graphics_queue = device->getQueue(queue_family_index, 0);
@@ -74,29 +74,41 @@ Engine::Engine(Canvas &canvas) {
   vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
   vk::SemaphoreCreateInfo semaphore_info;
   for (auto &frame_data : frames) {
-    frame_data.pool = device->createCommandPool(command_pool_info);
+    frame_data.pool = device->createCommandPoolUnique(command_pool_info);
     vk::CommandBufferAllocateInfo alloc_info(
-        frame_data.pool, vk::CommandBufferLevel::ePrimary, 1);
+        frame_data.pool.get(), vk::CommandBufferLevel::ePrimary, 1);
     frame_data.buffer = device->allocateCommandBuffers(alloc_info)[0];
-    frame_data.render_fence = device->createFence(fence_info);
-    frame_data.swapchain_semaphore = device->createSemaphore(semaphore_info);
-    frame_data.render_semaphore = device->createSemaphore(semaphore_info);
+    frame_data.render_fence = device->createFenceUnique(fence_info);
+    frame_data.swapchain_semaphore =
+        device->createSemaphoreUnique(semaphore_info);
+    frame_data.render_semaphore = device->createSemaphoreUnique(semaphore_info);
+  }
+}
+
+Engine::~Engine() {
+  device->waitIdle();
+  for (auto &frame : frames) {
+    device->destroySemaphore(frame.render_semaphore.release(), nullptr);
+    device->destroySemaphore(frame.swapchain_semaphore.release(), nullptr);
+    device->destroyFence(frame.render_fence.release());
+    device->destroyCommandPool(frame.pool.release());
   }
 }
 
 void Engine::draw() {
   auto &current_frame = get_current_frame();
-  vk_assert(device->waitForFences(1, &current_frame.render_fence, vk::True,
-                                  1000000000));
+  vk_assert(device->waitForFences(1, &current_frame.render_fence.get(),
+                                  vk::True, 1000000000));
 
-  auto result = swapchain->next_image_index(current_frame.swapchain_semaphore);
+  auto result =
+      swapchain->next_image_index(current_frame.swapchain_semaphore.get());
 
   if (result.result == vk::Result::eErrorOutOfDateKHR) {
     swapchain->recreate();
     return;
   }
 
-  vk_assert(device->resetFences(1, &current_frame.render_fence));
+  vk_assert(device->resetFences(1, &current_frame.render_fence.get()));
 
   if (result.result != vk::Result::eSuccess &&
       result.result != vk::Result::eSuboptimalKHR) {
@@ -130,18 +142,18 @@ void Engine::draw() {
 
   vk::CommandBufferSubmitInfo submit_info(current_frame.buffer);
   vk::SemaphoreSubmitInfo wait_info(
-      current_frame.swapchain_semaphore, 1,
+      current_frame.swapchain_semaphore.get(), 1,
       vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-  vk::SemaphoreSubmitInfo signal_info(current_frame.render_semaphore, 1,
+  vk::SemaphoreSubmitInfo signal_info(current_frame.render_semaphore.get(), 1,
                                       vk::PipelineStageFlagBits2::eAllGraphics);
   vk::SubmitInfo2 submit({}, 1, &wait_info, 1, &submit_info, 1, &signal_info);
-  if (graphics_queue.submit2(1, &submit, current_frame.render_fence) !=
+  if (graphics_queue.submit2(1, &submit, current_frame.render_fence.get()) !=
       vk::Result::eSuccess) {
     throw std::runtime_error("Failed Submit2");
   }
 
-  auto present = swapchain->get_present_info(&current_frame.render_semaphore,
-                                             &image_index);
+  auto present = swapchain->get_present_info(
+      &current_frame.render_semaphore.get(), &image_index);
   auto present_result = graphics_queue.presentKHR(present);
   if (present_result == vk::Result::eErrorOutOfDateKHR ||
       present_result == vk::Result::eSuboptimalKHR) {
@@ -193,15 +205,9 @@ Engine::find_suitable_queue_family(vk::PhysicalDevice device) const {
 
   for (uint32_t i = 0; i < props.size(); i += 1) {
     auto prop = props[i];
-    std::cerr << " === [" << i << "]: Graphics: "
-              << (uint32_t)(prop.queueFlags & vk::QueueFlagBits::eGraphics)
-              << std::endl;
+
     vk::Bool32 supported;
-
-    printf("instance: %p, surface: %p", *instance, *surface);
     vk_assert(device.getSurfaceSupportKHR(i, *surface, &supported));
-
-    std::cerr << " === [" << i << "]: Surface: " << supported << std::endl;
 
     if (prop.queueFlags & vk::QueueFlagBits::eGraphics && supported) {
       return i;
@@ -211,7 +217,7 @@ Engine::find_suitable_queue_family(vk::PhysicalDevice device) const {
   return {};
 }
 
-vk::Device Engine::create_device() {
+vk::UniqueDevice Engine::create_device() {
   std::vector<const char *> extensions = {vk::KHRSwapchainExtensionName};
 
   vk::StructureChain<vk::PhysicalDeviceFeatures2,
@@ -235,10 +241,10 @@ vk::Device Engine::create_device() {
   auto queue_create_info =
       vk::DeviceQueueCreateInfo({}, queue_family_index, 1, &priority);
 
-  return gpu.createDevice(vk::DeviceCreateInfo({}, 1, &queue_create_info, 0,
-                                               nullptr, extensions.size(),
-                                               extensions.data())
-                              .setPNext(&features));
+  return gpu.createDeviceUnique(
+      vk::DeviceCreateInfo({}, 1, &queue_create_info, 0, nullptr,
+                           extensions.size(), extensions.data())
+          .setPNext(&features));
 }
 
 } // namespace Render

@@ -17,6 +17,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(
 class Engine {
 public:
   Engine(Canvas &canvas);
+  ~Engine();
 
   void draw();
 
@@ -29,15 +30,15 @@ private:
   std::optional<uint32_t>
   find_suitable_queue_family(vk::PhysicalDevice device) const;
 
-  vk::Device create_device();
+  vk::UniqueDevice create_device();
 
 private:
   vk::UniqueInstance instance;
   vk::UniqueSurfaceKHR surface;
+  vk::UniqueDevice device;
   vk::PhysicalDevice gpu;
   vk::Queue graphics_queue;
   uint32_t queue_family_index;
-  vk::UniqueDevice device;
   std::unique_ptr<Swapchain> swapchain;
 
   FrameData frames[NUM_FRAMES];

@@ -23,6 +23,8 @@ set(
   "render/canvas.h"
   "render/engine.cpp"
   "render/engine.h"
+  "render/swapchain.cpp"
+  "render/swapchain.h"
   "render/vk_base.h"
   "render/vk_base.cpp"
   "render/window.h"
