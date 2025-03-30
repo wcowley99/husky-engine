@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvas.h"
+#include "frames.h"
 #include "swapchain.h"
 
 #include "vk_base.h"
@@ -30,6 +31,8 @@ private:
   std::optional<uint32_t>
   find_suitable_queue_family(vk::PhysicalDevice device) const;
 
+  void init_instance(Canvas &canvas);
+  void init_device();
   vk::UniqueDevice create_device();
 
 private:
@@ -41,9 +44,8 @@ private:
   uint32_t queue_family_index;
   std::unique_ptr<Swapchain> swapchain;
 
-  FrameData frames[NUM_FRAMES];
+  std::unique_ptr<FrameQueue> frames;
   uint32_t frame_count = 0;
-  FrameData &get_current_frame() { return frames[frame_count % NUM_FRAMES]; }
 };
 
 } // namespace Render

@@ -6,6 +6,9 @@ project(
   LANGUAGES CXX
 )
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -21,8 +24,12 @@ find_package(Vulkan REQUIRED)
 set(
   RENDER_SOURCES
   "render/canvas.h"
+  "render/command_builder.h"
+  "render/command_builder.cpp"
   "render/engine.cpp"
   "render/engine.h"
+  "render/frames.h"
+  "render/frames.cpp"
   "render/swapchain.cpp"
   "render/swapchain.h"
   "render/vk_base.h"

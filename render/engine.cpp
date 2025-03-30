@@ -17,6 +17,25 @@ debug_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 Engine::Engine(Canvas &canvas) {
   VULKAN_HPP_DEFAULT_DISPATCHER.init();
 
+  this->init_instance(canvas);
+
+  this->surface =
+      vk::UniqueSurfaceKHR(canvas.create_surface(*instance), *instance);
+
+  this->init_device();
+
+  this->graphics_queue = device->getQueue(queue_family_index, 0);
+
+  this->swapchain =
+      std::make_unique<Swapchain>(device.get(), surface.get(), gpu);
+
+  this->frames = std::make_unique<FrameQueue>(device.get(), queue_family_index,
+                                              swapchain->num_images());
+}
+
+Engine::~Engine() { device->waitIdle(); }
+
+void Engine::init_instance(Canvas &canvas) {
   vk::ApplicationInfo app_info("Hello, World", VK_MAKE_VERSION(1, 0, 0),
                                "No Engine", VK_MAKE_VERSION(1, 0, 0),
                                VK_API_VERSION_1_3);
@@ -51,10 +70,9 @@ Engine::Engine(Canvas &canvas) {
               vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
           debug_callback},
       nullptr);
+}
 
-  this->surface =
-      vk::UniqueSurfaceKHR(canvas.create_surface(*instance), *instance);
-
+void Engine::init_device() {
   auto devices = instance->enumeratePhysicalDevices();
 
   auto result = select_device(devices);
@@ -63,40 +81,10 @@ Engine::Engine(Canvas &canvas) {
 
   this->device = create_device();
   VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
-
-  this->graphics_queue = device->getQueue(queue_family_index, 0);
-
-  this->swapchain = Swapchain::create(device.get(), surface.get(), gpu);
-
-  vk::CommandPoolCreateInfo command_pool_info(
-      vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_family_index);
-
-  vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
-  vk::SemaphoreCreateInfo semaphore_info;
-  for (auto &frame_data : frames) {
-    frame_data.pool = device->createCommandPoolUnique(command_pool_info);
-    vk::CommandBufferAllocateInfo alloc_info(
-        frame_data.pool.get(), vk::CommandBufferLevel::ePrimary, 1);
-    frame_data.buffer = device->allocateCommandBuffers(alloc_info)[0];
-    frame_data.render_fence = device->createFenceUnique(fence_info);
-    frame_data.swapchain_semaphore =
-        device->createSemaphoreUnique(semaphore_info);
-    frame_data.render_semaphore = device->createSemaphoreUnique(semaphore_info);
-  }
-}
-
-Engine::~Engine() {
-  device->waitIdle();
-  for (auto &frame : frames) {
-    device->destroySemaphore(frame.render_semaphore.release(), nullptr);
-    device->destroySemaphore(frame.swapchain_semaphore.release(), nullptr);
-    device->destroyFence(frame.render_fence.release());
-    device->destroyCommandPool(frame.pool.release());
-  }
 }
 
 void Engine::draw() {
-  auto &current_frame = get_current_frame();
+  auto &current_frame = frames->next();
   vk_assert(device->waitForFences(1, &current_frame.render_fence.get(),
                                   vk::True, 1000000000));
 
@@ -118,45 +106,20 @@ void Engine::draw() {
   auto image_index = result.value;
   auto swapchain_image = swapchain->image(image_index);
 
-  current_frame.buffer.reset();
-  vk::CommandBufferBeginInfo begin_info(
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-  current_frame.buffer.begin(begin_info);
+  std::array<float, 4> color = {0.0f, 0.0f,
+                                std::abs(std::sin(frame_count / 120.0f)), 1.0f};
 
-  transition_image(current_frame.buffer, swapchain_image,
-                   vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+  current_frame.command_builder(swapchain_image)
+      .begin()
+      .transition_to(vk::ImageLayout::eGeneral)
+      .clear(color)
+      .transition_to(vk::ImageLayout::ePresentSrcKHR)
+      .end();
 
-  std::array<float, 4> colors = {
-      0.0f, 0.0f, std::abs(std::sin(frame_count / 120.0f)), 1.0f};
-  vk::ClearColorValue color(colors);
+  auto present = current_frame.show(*swapchain, graphics_queue, image_index);
 
-  vk::ImageSubresourceRange clear_range(vk::ImageAspectFlagBits::eColor, 0,
-                                        vk::RemainingMipLevels, 0,
-                                        vk::RemainingArrayLayers);
-  current_frame.buffer.clearColorImage(
-      swapchain_image, vk::ImageLayout::eGeneral, &color, 1, &clear_range);
-  transition_image(current_frame.buffer, swapchain_image,
-                   vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
-
-  current_frame.buffer.end();
-
-  vk::CommandBufferSubmitInfo submit_info(current_frame.buffer);
-  vk::SemaphoreSubmitInfo wait_info(
-      current_frame.swapchain_semaphore.get(), 1,
-      vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-  vk::SemaphoreSubmitInfo signal_info(current_frame.render_semaphore.get(), 1,
-                                      vk::PipelineStageFlagBits2::eAllGraphics);
-  vk::SubmitInfo2 submit({}, 1, &wait_info, 1, &submit_info, 1, &signal_info);
-  if (graphics_queue.submit2(1, &submit, current_frame.render_fence.get()) !=
-      vk::Result::eSuccess) {
-    throw std::runtime_error("Failed Submit2");
-  }
-
-  auto present = swapchain->get_present_info(
-      &current_frame.render_semaphore.get(), &image_index);
-  auto present_result = graphics_queue.presentKHR(present);
-  if (present_result == vk::Result::eErrorOutOfDateKHR ||
-      present_result == vk::Result::eSuboptimalKHR) {
+  if (present == vk::Result::eErrorOutOfDateKHR ||
+      present == vk::Result::eSuboptimalKHR) {
     swapchain->recreate();
   }
 

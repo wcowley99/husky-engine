@@ -1,14 +1,9 @@
 #include "swapchain.h"
 
+#include <algorithm>
 #include <iostream>
 
 namespace Render {
-
-std::unique_ptr<Swapchain> Swapchain::create(vk::Device device,
-                                             vk::SurfaceKHR surface,
-                                             vk::PhysicalDevice gpu) {
-  return std::unique_ptr<Swapchain>(new Swapchain(device, surface, gpu));
-}
 
 Swapchain::Swapchain(vk::Device device, vk::SurfaceKHR surface,
                      vk::PhysicalDevice gpu) {
@@ -37,11 +32,14 @@ void Swapchain::recreate() {
   this->init();
 }
 
+uint32_t Swapchain::num_images() const { return swapchain_images.size(); }
+
 void Swapchain::init() {
   auto capabilities = gpu.getSurfaceCapabilitiesKHR(surface);
   auto formats = gpu.getSurfaceFormatsKHR(surface);
 
   auto format = vk::Format::eB8G8R8A8Srgb;
+  uint32_t num_images = std::max(capabilities.minImageCount + 1, 3u);
 
   vk::SwapchainCreateInfoKHR swapchainCreateInfo(
       {}, surface, NUM_FRAMES, format, vk::ColorSpaceKHR::eSrgbNonlinear,

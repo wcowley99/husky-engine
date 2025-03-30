@@ -8,8 +8,7 @@ namespace Render {
 
 class Swapchain {
 public:
-  static std::unique_ptr<Swapchain>
-  create(vk::Device device, vk::SurfaceKHR surface, vk::PhysicalDevice gpu);
+  Swapchain(vk::Device device, vk::SurfaceKHR surface, vk::PhysicalDevice gpu);
 
   vk::ResultValue<uint32_t> next_image_index(vk::Semaphore semaphore);
   vk::Image image(uint32_t index);
@@ -19,9 +18,9 @@ public:
 
   void recreate();
 
-private:
-  Swapchain(vk::Device device, vk::SurfaceKHR surface, vk::PhysicalDevice gpu);
+  uint32_t num_images() const;
 
+private:
   void init();
 
 private:
