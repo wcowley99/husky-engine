@@ -1,35 +1,25 @@
 #include "command_builder.h"
 
+#include <iostream>
+
 namespace Render {
 
-CommandBuilder::CommandBuilder(vk::CommandBuffer command,
-                               vk::Image active_image) {
+CommandBuilder::CommandBuilder(vk::CommandBuffer command) {
   this->command = command;
-  this->active_image = active_image;
-  this->current_layout = vk::ImageLayout::eUndefined;
-}
 
-CommandBuilder &CommandBuilder::begin() {
   command.reset();
   vk::CommandBufferBeginInfo begin_info(
       vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
   command.begin(begin_info);
-
-  return *this;
 }
 
-void CommandBuilder::end() { command.end(); }
-
-CommandBuilder &
-CommandBuilder::with_active_image(vk::Image image,
-                                  vk::ImageLayout current_layout) {
-  this->active_image = image;
-  this->current_layout = current_layout;
-
-  return *this;
+void CommandBuilder::present(Image &image) {
+  transition_image(image, vk::ImageLayout::ePresentSrcKHR);
+  command.end();
 }
 
-CommandBuilder &CommandBuilder::transition_to(vk::ImageLayout new_layout) {
+void CommandBuilder::transition_image(Image &image,
+                                      vk::ImageLayout new_layout) {
   auto aspect_mask = (new_layout == vk::ImageLayout::eDepthAttachmentOptimal)
                          ? vk::ImageAspectFlagBits::eDepth
                          : vk::ImageAspectFlagBits::eColor;
@@ -38,28 +28,50 @@ CommandBuilder &CommandBuilder::transition_to(vk::ImageLayout new_layout) {
       vk::AccessFlagBits2::eMemoryWrite,
       vk::PipelineStageFlagBits2::eAllCommands,
       vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
-      current_layout, new_layout, 0, 0, active_image,
+      image.layout, new_layout, 0, 0, image.image,
       vk::ImageSubresourceRange(aspect_mask, 0, vk::RemainingMipLevels, 0,
                                 vk::RemainingArrayLayers));
 
-  this->current_layout = new_layout;
+  image.layout = new_layout;
 
   vk::DependencyInfo dep_info;
   dep_info.imageMemoryBarrierCount = 1;
   dep_info.pImageMemoryBarriers = &imageBarrier;
   command.pipelineBarrier2(dep_info);
-
-  return *this;
 }
 
-CommandBuilder &CommandBuilder::clear(std::array<float, 4> color) {
+CommandBuilder &CommandBuilder::clear(Image &image,
+                                      std::array<float, 4> color) {
+  transition_image(image, vk::ImageLayout::eGeneral);
   vk::ImageSubresourceRange clear_range(vk::ImageAspectFlagBits::eColor, 0,
                                         vk::RemainingMipLevels, 0,
                                         vk::RemainingArrayLayers);
 
   vk::ClearColorValue clear_color(color);
-  command.clearColorImage(active_image, current_layout, &clear_color, 1,
+  command.clearColorImage(image.image, image.layout, &clear_color, 1,
                           &clear_range);
+
+  return *this;
+}
+
+CommandBuilder &CommandBuilder::copy_to(Image &src, Image &dst) {
+  transition_image(src, vk::ImageLayout::eTransferSrcOptimal);
+  transition_image(dst, vk::ImageLayout::eTransferDstOptimal);
+
+  auto subresource =
+      vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+
+  std::array<vk::Offset3D, 2> src_offsets = {
+      vk::Offset3D{}, VkUtil::extent_to_offset(src.extent)};
+  std::array<vk::Offset3D, 2> dst_offsets = {
+      vk::Offset3D{}, VkUtil::extent_to_offset(dst.extent)};
+  auto blit =
+      vk::ImageBlit2(subresource, src_offsets, subresource, dst_offsets);
+
+  auto blit_info =
+      vk::BlitImageInfo2(src.image, src.layout, dst.image, dst.layout, 1, &blit,
+                         vk::Filter::eLinear);
+  command.blitImage2(blit_info);
 
   return *this;
 }

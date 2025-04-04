@@ -23,6 +23,8 @@ Engine::Engine(Canvas &canvas) {
       vk::UniqueSurfaceKHR(canvas.create_surface(*instance), *instance);
 
   this->init_device();
+  this->allocator =
+      std::make_unique<Allocator>(gpu, device.get(), instance.get());
 
   this->graphics_queue = device->getQueue(queue_family_index, 0);
 
@@ -31,6 +33,16 @@ Engine::Engine(Canvas &canvas) {
 
   this->frames = std::make_unique<FrameQueue>(device.get(), queue_family_index,
                                               swapchain->num_images());
+
+  this->draw_image =
+      ImageBuilder(canvas.extent())
+          .with_usage_flags(vk::ImageUsageFlagBits::eTransferSrc |
+                            vk::ImageUsageFlagBits::eTransferDst |
+                            vk::ImageUsageFlagBits::eStorage |
+                            vk::ImageUsageFlagBits::eColorAttachment)
+          .with_memory_usage(VMA_MEMORY_USAGE_GPU_ONLY)
+          .with_memory_properties(vk::MemoryPropertyFlagBits::eDeviceLocal)
+          .build(allocator, device.get());
 }
 
 Engine::~Engine() { device->waitIdle(); }
@@ -101,20 +113,18 @@ void Engine::draw() {
   if (result.result != vk::Result::eSuccess &&
       result.result != vk::Result::eSuboptimalKHR) {
     std::cout << result.result << std::endl;
-    throw std::runtime_error("Failed to acquire Next Image: ");
+    throw std::runtime_error("Failed to acquire Next Image");
   }
   auto image_index = result.value;
-  auto swapchain_image = swapchain->image(image_index);
+  auto &swapchain_image = swapchain->image(image_index);
 
   std::array<float, 4> color = {0.0f, 0.0f,
                                 std::abs(std::sin(frame_count / 120.0f)), 1.0f};
 
-  current_frame.command_builder(swapchain_image)
-      .begin()
-      .transition_to(vk::ImageLayout::eGeneral)
-      .clear(color)
-      .transition_to(vk::ImageLayout::ePresentSrcKHR)
-      .end();
+  current_frame.command_builder()
+      .clear(*draw_image, color)
+      .copy_to(*draw_image, swapchain_image)
+      .present(swapchain_image);
 
   auto present = current_frame.show(*swapchain, graphics_queue, image_index);
 

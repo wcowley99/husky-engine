@@ -6,6 +6,9 @@
 
 #include "vk_base.h"
 
+#include "allocator.h"
+#include "image.h"
+
 #include <optional>
 
 namespace Render {
@@ -33,6 +36,7 @@ private:
 
   void init_instance(Canvas &canvas);
   void init_device();
+  void init_gpu_allocator();
   vk::UniqueDevice create_device();
 
 private:
@@ -46,6 +50,10 @@ private:
 
   std::unique_ptr<FrameQueue> frames;
   uint32_t frame_count = 0;
+
+  std::shared_ptr<Allocator> allocator;
+
+  std::unique_ptr<Image> draw_image;
 };
 
 } // namespace Render

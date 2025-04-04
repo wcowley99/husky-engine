@@ -1,5 +1,7 @@
 #include "frames.h"
 
+#include <iostream>
+
 namespace Render {
 
 vk::Result FrameContext::show(Swapchain &swapchain, vk::Queue graphics_queue,
@@ -49,8 +51,8 @@ FrameContext &FrameQueue::next() {
   return frame;
 }
 
-CommandBuilder FrameContext::command_builder(vk::Image active_image) {
-  return CommandBuilder(buffer, active_image);
+CommandBuilder FrameContext::command_builder() {
+  return CommandBuilder(buffer);
 }
 
 } // namespace Render

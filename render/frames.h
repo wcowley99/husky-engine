@@ -8,7 +8,7 @@ namespace Render {
 
 class FrameContext {
 public:
-  CommandBuilder command_builder(vk::Image active_image);
+  CommandBuilder command_builder();
 
   vk::Result show(Swapchain &swapchain, vk::Queue graphics_queue,
                   uint32_t image_index);

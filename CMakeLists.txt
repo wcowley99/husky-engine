@@ -19,17 +19,29 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(sdl3)
 
+FetchContent_Declare(
+  VulkanMemoryAllocator
+  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+  GIT_TAG master
+)
+
+FetchContent_MakeAvailable(VulkanMemoryAllocator)
+
 find_package(Vulkan REQUIRED)
 
 set(
   RENDER_SOURCES
+  "render/allocator.cpp"
+  "render/allocator.h"
   "render/canvas.h"
   "render/command_builder.h"
   "render/command_builder.cpp"
   "render/engine.cpp"
   "render/engine.h"
-  "render/frames.h"
   "render/frames.cpp"
+  "render/frames.h"
+  "render/image.cpp"
+  "render/image.h"
   "render/swapchain.cpp"
   "render/swapchain.h"
   "render/vk_base.h"
@@ -46,9 +58,10 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME} PRIVATE 
   SDL3::SDL3
   Vulkan::Headers
+  GPUOpen::VulkanMemoryAllocator
 )
 
-FetchContent_GetProperties(SDL3)
-if(SDL3_POPULATED)
-    target_include_directories(MyExecutable PRIVATE ${SDL3_SOURCE_DIR}/include)
-endif()
+target_include_directories(${PROJECT_NAME} PRIVATE 
+  ${SDL3_SOURCE_DIR}/include
+  ${VMA_SOURCE_DIR}/include
+)

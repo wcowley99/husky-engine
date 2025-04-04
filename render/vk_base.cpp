@@ -1,3 +1,7 @@
+#define VMA_IMPLEMENTATION
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+
 #include "vk_base.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -10,24 +14,24 @@ void vk_assert(vk::Result result) {
   }
 }
 
-void transition_image(vk::CommandBuffer cmd, vk::Image image,
-                      vk::ImageLayout current, vk::ImageLayout next) {
-  auto aspect_mask = (next == vk::ImageLayout::eDepthAttachmentOptimal)
-                         ? vk::ImageAspectFlagBits::eDepth
-                         : vk::ImageAspectFlagBits::eColor;
-  vk::ImageMemoryBarrier2 imageBarrier(
-      vk::PipelineStageFlagBits2::eAllCommands,
-      vk::AccessFlagBits2::eMemoryWrite,
-      vk::PipelineStageFlagBits2::eAllCommands,
-      vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
-      current, next, 0, 0, image,
-      vk::ImageSubresourceRange(aspect_mask, 0, vk::RemainingMipLevels, 0,
-                                vk::RemainingArrayLayers));
+namespace VkUtil {
 
-  vk::DependencyInfo dep_info;
-  dep_info.imageMemoryBarrierCount = 1;
-  dep_info.pImageMemoryBarriers = &imageBarrier;
-  cmd.pipelineBarrier2(dep_info);
+vk::ImageViewCreateInfo image_view_create_info(vk::Format format,
+                                               vk::Image image,
+                                               vk::ImageAspectFlags mask) {
+  return vk::ImageViewCreateInfo(
+      {}, image, vk::ImageViewType::e2D, format,
+      vk::ComponentMapping{vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG,
+                           vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA},
+      vk::ImageSubresourceRange{mask, 0, 1, 0, 1});
 }
+
+vk::Offset3D extent_to_offset(vk::Extent3D &extent) {
+  return vk::Offset3D{static_cast<int32_t>(extent.width),
+                      static_cast<int32_t>(extent.height),
+                      static_cast<int32_t>(extent.depth)};
+}
+
+} // namespace VkUtil
 
 } // namespace Render
