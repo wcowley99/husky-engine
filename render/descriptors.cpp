@@ -32,7 +32,7 @@ DescriptorLayoutBuilder::add_binding(uint32_t location,
   return *this;
 }
 
-vk::DescriptorSetLayout DescriptorLayoutBuilder::build() {
+vk::UniqueDescriptorSetLayout DescriptorLayoutBuilder::build() {
   for (auto &b : bindings) {
     b.stageFlags |= shader_stage_flags;
   }
@@ -43,7 +43,7 @@ vk::DescriptorSetLayout DescriptorLayoutBuilder::build() {
   vk::DescriptorSetLayout layout;
   VK_ASSERT(device.createDescriptorSetLayout(&info, nullptr, &layout));
 
-  return layout;
+  return vk::UniqueDescriptorSetLayout(layout);
 }
 
 // DescriptorAllocator

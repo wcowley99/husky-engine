@@ -61,20 +61,17 @@ set(
   "render/window.cpp"
 )
 
-if (CMAKE_BUILD_TYPE MATCHES Release)
-  message("${Python_EXECUTABLE}")
-  add_custom_command(
-    OUTPUT shader_sources.h
-    COMMAND python 
-    ARGS ${CMAKE_SOURCE_DIR}/embed_shaders.py ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}
-    DEPENDS embed_shaders.py
-  )
+add_custom_command(
+  OUTPUT shader_sources.h
+  COMMAND python 
+  ARGS ${CMAKE_SOURCE_DIR}/embed_shaders.py ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+  DEPENDS embed_shaders.py
+)
 
-  set(
-    GENERATED_FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/shader_sources.h"
-  )
-endif()
+set(
+  GENERATED_FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/shader_sources.h"
+)
 
 add_executable(${PROJECT_NAME} 
   main.cpp

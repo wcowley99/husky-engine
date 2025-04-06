@@ -2,25 +2,23 @@
 
 #include <stdexcept>
 
-#ifdef NDEBUG
 #include "shader_sources.h"
-#endif
 
 namespace Render {
 
 PipelineBuilder::PipelineBuilder(vk::Device &device, vk::PipelineLayout &layout)
     : device(device), layout(layout) {}
 
+PipelineBuilder::~PipelineBuilder() {
+  for (auto shader : modules) {
+    device.destroyShaderModule(shader);
+  }
+}
+
 PipelineBuilder &PipelineBuilder::with_module(const std::string &filename,
                                               vk::ShaderStageFlagBits stage) {
-#ifdef NDEBUG
   auto &shader_bytes = lookup_shader_source(filename);
   std::cout << "got shader bytes!" << std::endl;
-#else
-  // todo: handle shader compilation for non-embedded shaders
-  assert(false);
-  std::vector<uint32_t> shader_bytes;
-#endif
 
   vk::ShaderModuleCreateInfo create_info(
       {}, shader_bytes.size() * sizeof(uint32_t), shader_bytes.data());

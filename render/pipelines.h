@@ -7,6 +7,7 @@ namespace Render {
 class PipelineBuilder {
 public:
   PipelineBuilder(vk::Device &device, vk::PipelineLayout &layout);
+  ~PipelineBuilder();
 
   PipelineBuilder &with_module(const std::string &filename,
                                vk::ShaderStageFlagBits stage);

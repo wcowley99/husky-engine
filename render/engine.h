@@ -59,7 +59,7 @@ private:
 
   std::unique_ptr<DescriptorAllocator> global_descriptor_allocator;
   vk::DescriptorSet draw_image_descriptors;
-  vk::DescriptorSetLayout draw_image_descriptor_layouts;
+  vk::UniqueDescriptorSetLayout draw_image_descriptor_layouts;
 
   vk::UniquePipelineLayout gradient_layout;
   vk::UniquePipeline gradient_pipeline;

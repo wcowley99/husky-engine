@@ -115,8 +115,8 @@ void Engine::init_descriptors() {
 
   std::cout << "here!" << std::endl;
 
-  this->draw_image_descriptors =
-      global_descriptor_allocator->allocate(draw_image_descriptor_layouts);
+  this->draw_image_descriptors = global_descriptor_allocator->allocate(
+      draw_image_descriptor_layouts.get());
 
   std::cout << "here2!" << std::endl;
 
@@ -131,8 +131,8 @@ void Engine::init_descriptors() {
 }
 
 void Engine::init_pipelines() {
-  vk::PipelineLayoutCreateInfo create_info({}, 1,
-                                           &draw_image_descriptor_layouts);
+  vk::PipelineLayoutCreateInfo create_info(
+      {}, 1, &draw_image_descriptor_layouts.get());
 
   std::cout << "creating gradient layout!" << std::endl;
   this->gradient_layout = vk::UniquePipelineLayout(

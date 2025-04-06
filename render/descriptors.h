@@ -20,7 +20,7 @@ public:
   DescriptorLayoutBuilder &add_binding(uint32_t binding,
                                        vk::DescriptorType type);
 
-  vk::DescriptorSetLayout build();
+  vk::UniqueDescriptorSetLayout build();
 
 private:
   std::vector<vk::DescriptorSetLayoutBinding> bindings;
