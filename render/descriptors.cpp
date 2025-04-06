@@ -40,10 +40,7 @@ vk::UniqueDescriptorSetLayout DescriptorLayoutBuilder::build() {
   vk::DescriptorSetLayoutCreateInfo info(create_flags, bindings.size(),
                                          bindings.data(), pNext);
 
-  vk::DescriptorSetLayout layout;
-  VK_ASSERT(device.createDescriptorSetLayout(&info, nullptr, &layout));
-
-  return vk::UniqueDescriptorSetLayout(layout);
+  return device.createDescriptorSetLayoutUnique(info);
 }
 
 // DescriptorAllocator

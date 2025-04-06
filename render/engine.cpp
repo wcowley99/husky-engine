@@ -142,7 +142,8 @@ void Engine::init_pipelines() {
   this->gradient_pipeline = vk::UniquePipeline(
       PipelineBuilder(device.get(), gradient_layout.get())
           .with_module("gradient.comp", vk::ShaderStageFlagBits::eCompute)
-          .build_compute_pipeline());
+          .build_compute_pipeline(),
+      *device);
 
   std::cout << "returning!" << std::endl;
 }
