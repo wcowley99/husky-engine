@@ -17,6 +17,10 @@ public:
   CommandBuilder &clear(Image &image, std::array<float, 4> color);
   CommandBuilder &copy_to(Image &src, Image &dst);
 
+  CommandBuilder &execute_compute(Image &image, vk::Pipeline &pipeline,
+                                  vk::PipelineLayout &layout,
+                                  vk::DescriptorSet descriptors);
+
 private:
   void transition_image(Image &image, vk::ImageLayout layout);
 

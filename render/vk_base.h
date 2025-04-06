@@ -3,11 +3,21 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 
 #include <vk_mem_alloc.h>
+#include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan.hpp>
 
-namespace Render {
+#include <iostream>
 
-void vk_assert(vk::Result result);
+#define VK_ASSERT(x)                                                           \
+  do {                                                                         \
+    auto err = static_cast<VkResult>(x);                                       \
+    if (err) {                                                                 \
+      std::cout << "[" << __FILE__ << ":" << __LINE__ << "] "                  \
+                << string_VkResult(err);                                       \
+    }                                                                          \
+  } while (false)
+
+namespace Render {
 
 namespace VkUtil {
 

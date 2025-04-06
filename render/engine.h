@@ -7,6 +7,7 @@
 #include "vk_base.h"
 
 #include "allocator.h"
+#include "descriptors.h"
 #include "image.h"
 
 #include <optional>
@@ -36,7 +37,8 @@ private:
 
   void init_instance(Canvas &canvas);
   void init_device();
-  void init_gpu_allocator();
+  void init_descriptors();
+  void init_pipelines();
   vk::UniqueDevice create_device();
 
 private:
@@ -54,6 +56,13 @@ private:
   std::shared_ptr<Allocator> allocator;
 
   std::unique_ptr<Image> draw_image;
+
+  std::unique_ptr<DescriptorAllocator> global_descriptor_allocator;
+  vk::DescriptorSet draw_image_descriptors;
+  vk::DescriptorSetLayout draw_image_descriptor_layouts;
+
+  vk::UniquePipelineLayout gradient_layout;
+  vk::UniquePipeline gradient_pipeline;
 };
 
 } // namespace Render

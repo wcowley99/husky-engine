@@ -1,5 +1,7 @@
 #include "engine.h"
 
+#include "pipelines.h"
+
 #include <cmath>
 #include <iostream>
 
@@ -43,6 +45,11 @@ Engine::Engine(Canvas &canvas) {
           .with_memory_usage(VMA_MEMORY_USAGE_GPU_ONLY)
           .with_memory_properties(vk::MemoryPropertyFlagBits::eDeviceLocal)
           .build(allocator, device.get());
+
+  this->init_descriptors();
+
+  std::cout << "past descriptors!" << std::endl;
+  this->init_pipelines();
 }
 
 Engine::~Engine() { device->waitIdle(); }
@@ -95,9 +102,54 @@ void Engine::init_device() {
   VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
 }
 
+void Engine::init_descriptors() {
+  this->global_descriptor_allocator =
+      DescriptorAllocatorBuilder(device.get())
+          .with_descriptor_capacity(vk::DescriptorType::eStorageImage, 10)
+          .build();
+
+  this->draw_image_descriptor_layouts =
+      DescriptorLayoutBuilder(device.get(), vk::ShaderStageFlagBits::eCompute)
+          .add_binding(0, vk::DescriptorType::eStorageImage)
+          .build();
+
+  std::cout << "here!" << std::endl;
+
+  this->draw_image_descriptors =
+      global_descriptor_allocator->allocate(draw_image_descriptor_layouts);
+
+  std::cout << "here2!" << std::endl;
+
+  vk::DescriptorImageInfo image_info({}, draw_image->image_view.get(),
+                                     vk::ImageLayout::eGeneral);
+
+  vk::WriteDescriptorSet write(draw_image_descriptors, 0, {}, 1,
+                               vk::DescriptorType::eStorageImage, &image_info);
+  device->updateDescriptorSets(1, &write, 0, nullptr);
+
+  std::cout << "here3!" << std::endl;
+}
+
+void Engine::init_pipelines() {
+  vk::PipelineLayoutCreateInfo create_info({}, 1,
+                                           &draw_image_descriptor_layouts);
+
+  std::cout << "creating gradient layout!" << std::endl;
+  this->gradient_layout = vk::UniquePipelineLayout(
+      device->createPipelineLayout(create_info), *device);
+
+  std::cout << "creating gradient pipeline!" << std::endl;
+  this->gradient_pipeline = vk::UniquePipeline(
+      PipelineBuilder(device.get(), gradient_layout.get())
+          .with_module("gradient.comp", vk::ShaderStageFlagBits::eCompute)
+          .build_compute_pipeline());
+
+  std::cout << "returning!" << std::endl;
+}
+
 void Engine::draw() {
   auto &current_frame = frames->next();
-  vk_assert(device->waitForFences(1, &current_frame.render_fence.get(),
+  VK_ASSERT(device->waitForFences(1, &current_frame.render_fence.get(),
                                   vk::True, 1000000000));
 
   auto result =
@@ -108,7 +160,7 @@ void Engine::draw() {
     return;
   }
 
-  vk_assert(device->resetFences(1, &current_frame.render_fence.get()));
+  VK_ASSERT(device->resetFences(1, &current_frame.render_fence.get()));
 
   if (result.result != vk::Result::eSuccess &&
       result.result != vk::Result::eSuboptimalKHR) {
@@ -123,6 +175,8 @@ void Engine::draw() {
 
   current_frame.command_builder()
       .clear(*draw_image, color)
+      .execute_compute(*draw_image, gradient_pipeline.get(),
+                       gradient_layout.get(), draw_image_descriptors)
       .copy_to(*draw_image, swapchain_image)
       .present(swapchain_image);
 
@@ -180,7 +234,7 @@ Engine::find_suitable_queue_family(vk::PhysicalDevice device) const {
     auto prop = props[i];
 
     vk::Bool32 supported;
-    vk_assert(device.getSurfaceSupportKHR(i, *surface, &supported));
+    VK_ASSERT(device.getSurfaceSupportKHR(i, *surface, &supported));
 
     if (prop.queueFlags & vk::QueueFlagBits::eGraphics && supported) {
       return i;

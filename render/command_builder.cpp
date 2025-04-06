@@ -1,5 +1,6 @@
 #include "command_builder.h"
 
+#include <cmath>
 #include <iostream>
 
 namespace Render {
@@ -50,6 +51,22 @@ CommandBuilder &CommandBuilder::clear(Image &image,
   vk::ClearColorValue clear_color(color);
   command.clearColorImage(image.image, image.layout, &clear_color, 1,
                           &clear_range);
+
+  return *this;
+}
+
+CommandBuilder &CommandBuilder::execute_compute(Image &image,
+                                                vk::Pipeline &pipeline,
+                                                vk::PipelineLayout &layout,
+                                                vk::DescriptorSet descriptors) {
+  transition_image(image, vk::ImageLayout::eGeneral);
+  command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+
+  command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1,
+                             &descriptors, 0, nullptr);
+
+  command.dispatch(std::ceil(image.extent.width / 16.0f),
+                   std::ceil(image.extent.height / 16.0f), 1);
 
   return *this;
 }
