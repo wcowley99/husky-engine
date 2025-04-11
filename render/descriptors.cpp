@@ -48,8 +48,9 @@ DescriptorAllocator::DescriptorAllocator(
     vk::Device &device, uint32_t max_sets,
     const std::vector<vk::DescriptorPoolSize> &sizes)
     : device(device) {
-  vk::DescriptorPoolCreateInfo create_info({}, max_sets, sizes.size(),
-                                           sizes.data());
+  vk::DescriptorPoolCreateInfo create_info(
+      vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, max_sets,
+      sizes.size(), sizes.data());
 
   this->pool = device.createDescriptorPoolUnique(create_info);
 }
@@ -64,6 +65,8 @@ DescriptorAllocator::allocate(vk::DescriptorSetLayout layout) {
 
   return descriptor_sets[0];
 }
+
+vk::DescriptorPool &DescriptorAllocator::get_pool() { return pool.get(); }
 
 // DescriptorAllocatorBuilder
 DescriptorAllocatorBuilder::DescriptorAllocatorBuilder(vk::Device &device)

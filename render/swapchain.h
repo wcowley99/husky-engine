@@ -15,6 +15,7 @@ public:
   vk::ResultValue<uint32_t> next_image_index(vk::Semaphore semaphore);
   Image &image(uint32_t index);
 
+  vk::Format image_format();
   vk::PresentInfoKHR get_present_info(vk::Semaphore *semaphore,
                                       uint32_t *image_index);
 
@@ -29,6 +30,8 @@ private:
   vk::Device device;
   vk::PhysicalDevice gpu;
   vk::SurfaceKHR surface;
+
+  vk::Format format;
 
   vk::UniqueSwapchainKHR swapchain;
   std::vector<std::unique_ptr<Image>> swapchain_images;

@@ -50,9 +50,15 @@ Engine::Engine(Canvas &canvas) {
 
   std::cout << "past descriptors!" << std::endl;
   this->init_pipelines();
+  this->init_imgui(canvas);
 }
 
-Engine::~Engine() { device->waitIdle(); }
+Engine::~Engine() {
+  device->waitIdle();
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext();
+}
 
 void Engine::init_instance(Canvas &canvas) {
   vk::ApplicationInfo app_info("Hello, World", VK_MAKE_VERSION(1, 0, 0),
@@ -148,6 +154,55 @@ void Engine::init_pipelines() {
   std::cout << "returning!" << std::endl;
 }
 
+void Engine::init_imgui(Canvas &canvas) {
+  this->imgui_descriptor_allocator =
+      DescriptorAllocatorBuilder(device.get())
+          .with_descriptor_capacity(vk::DescriptorType::eCombinedImageSampler,
+                                    1000)
+          .build();
+
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+
+  ImGuiIO &io = ImGui::GetIO();
+  (void)io;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+  ImGui::StyleColorsDark();
+
+  canvas.init_imgui();
+
+  ImGui_ImplVulkan_InitInfo init_info = {};
+  init_info.Instance = instance.get();
+  init_info.PhysicalDevice = gpu;
+  init_info.Device = device.get();
+  init_info.QueueFamily = queue_family_index;
+  init_info.Queue = graphics_queue;
+  init_info.DescriptorPool = imgui_descriptor_allocator->get_pool();
+  init_info.MinImageCount = swapchain->num_images();
+  init_info.ImageCount = swapchain->num_images();
+  init_info.UseDynamicRendering = true;
+
+  auto format = swapchain->image_format();
+  vk::PipelineRenderingCreateInfo create_info({}, 1, &format);
+
+  init_info.PipelineRenderingCreateInfo = create_info;
+  /*init_info.MSAASamples = vk::SampleCountFlagBits::e1;*/
+
+  const auto &d = VULKAN_HPP_DEFAULT_DISPATCHER;
+  ImGui_ImplVulkan_LoadFunctions(
+      VK_MAKE_API_VERSION(0, 1, 3, 0),
+      [](const char *function_name, void *vulkan_instance) {
+        return d.vkGetInstanceProcAddr(
+            *(reinterpret_cast<VkInstance *>(vulkan_instance)), function_name);
+      },
+      &instance.get());
+
+  ImGui_ImplVulkan_Init(&init_info);
+  ImGui_ImplVulkan_CreateFontsTexture();
+}
+
 void Engine::draw() {
   auto &current_frame = frames->next();
   VK_ASSERT(device->waitForFences(1, &current_frame.render_fence.get(),
@@ -179,6 +234,7 @@ void Engine::draw() {
       .execute_compute(*draw_image, gradient_pipeline.get(),
                        gradient_layout.get(), draw_image_descriptors)
       .copy_to(*draw_image, swapchain_image)
+      .draw_imgui(swapchain_image, *swapchain_image.image_view)
       .present(swapchain_image);
 
   auto present = current_frame.show(*swapchain, graphics_queue, image_index);

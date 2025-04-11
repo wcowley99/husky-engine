@@ -71,6 +71,27 @@ CommandBuilder &CommandBuilder::execute_compute(Image &image,
   return *this;
 }
 
+CommandBuilder &CommandBuilder::draw_imgui(Image &image,
+                                           vk::ImageView image_view) {
+  transition_image(image, vk::ImageLayout::eColorAttachmentOptimal);
+
+  vk::RenderingAttachmentInfo color_attachment(
+      image_view, vk::ImageLayout::eColorAttachmentOptimal, {}, {}, {});
+
+  vk::Extent2D extent(image.extent.width, image.extent.height);
+  vk::RenderingInfo render_info({}, vk::Rect2D(vk::Offset2D{0, 0}, extent), 1,
+                                {}, 1, &color_attachment, nullptr);
+
+  command.beginRendering(&render_info);
+
+  auto draw_data = ImGui::GetDrawData();
+  ImGui_ImplVulkan_RenderDrawData(draw_data, command);
+
+  command.endRendering();
+
+  return *this;
+}
+
 CommandBuilder &CommandBuilder::copy_to(Image &src, Image &dst) {
   transition_image(src, vk::ImageLayout::eTransferSrcOptimal);
   transition_image(dst, vk::ImageLayout::eTransferDstOptimal);

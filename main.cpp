@@ -12,6 +12,7 @@ int main(int argc, char *argv[]) {
 
   SDL_Event e;
   bool quit = false;
+  bool show = true;
   while (true) {
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_EVENT_QUIT ||
@@ -19,11 +20,21 @@ int main(int argc, char *argv[]) {
         quit = true;
         break;
       }
+
+      ImGui_ImplSDL3_ProcessEvent(&e);
     }
 
     if (quit) {
       break;
     }
+
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::ShowDemoWindow(&show);
+
+    ImGui::Render();
 
     engine.draw();
     window.refresh();

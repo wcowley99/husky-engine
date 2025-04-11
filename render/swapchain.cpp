@@ -11,6 +11,8 @@ Swapchain::Swapchain(vk::Device device, vk::SurfaceKHR surface,
   this->gpu = gpu;
   this->surface = surface;
 
+  this->format = vk::Format::eB8G8R8A8Srgb;
+
   this->init();
 }
 
@@ -25,6 +27,8 @@ vk::PresentInfoKHR Swapchain::get_present_info(vk::Semaphore *semaphore,
 
   return vk::PresentInfoKHR(1, semaphore, 1, &swapchain.get(), image_index);
 }
+
+vk::Format Swapchain::image_format() { return format; }
 
 void Swapchain::recreate() {
   std::cout << "Recreating Swapchain" << std::endl;
@@ -41,7 +45,6 @@ void Swapchain::init() {
   auto capabilities = gpu.getSurfaceCapabilitiesKHR(surface);
   auto formats = gpu.getSurfaceFormatsKHR(surface);
 
-  auto format = vk::Format::eB8G8R8A8Srgb;
   uint32_t num_images = std::max(capabilities.minImageCount + 1, 3u);
 
   vk::SwapchainCreateInfoKHR swapchainCreateInfo(

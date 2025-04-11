@@ -10,6 +10,10 @@
 #include "descriptors.h"
 #include "image.h"
 
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_vulkan.h"
+
 #include <optional>
 
 namespace Render {
@@ -39,6 +43,7 @@ private:
   void init_device();
   void init_descriptors();
   void init_pipelines();
+  void init_imgui(Canvas &canvas);
   vk::UniqueDevice create_device();
 
 private:
@@ -63,6 +68,8 @@ private:
 
   vk::UniquePipelineLayout gradient_layout;
   vk::UniquePipeline gradient_pipeline;
+
+  std::unique_ptr<DescriptorAllocator> imgui_descriptor_allocator;
 };
 
 } // namespace Render

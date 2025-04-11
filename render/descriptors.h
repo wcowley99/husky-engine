@@ -39,6 +39,8 @@ public:
   void reset();
   vk::DescriptorSet allocate(vk::DescriptorSetLayout layout);
 
+  vk::DescriptorPool &get_pool();
+
 private:
   vk::UniqueDescriptorPool pool;
   vk::Device &device;

@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include <iostream>
+#include <optional>
 
 #define VK_ASSERT(x)                                                           \
   do {                                                                         \

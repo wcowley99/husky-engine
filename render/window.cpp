@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <imgui_impl_sdl3.h>
 
 #include <cstdio>
 #include <cstring>
@@ -53,6 +54,8 @@ std::vector<const char *> Window::required_instance_extensions() {
 }
 
 vk::Extent2D Window::extent() { return vk::Extent2D{width, height}; }
+
+void Window::init_imgui() { ImGui_ImplSDL3_InitForVulkan(window); }
 
 void Window::refresh() { SDL_UpdateWindowSurface(window); }
 

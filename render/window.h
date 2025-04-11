@@ -17,6 +17,7 @@ public:
   virtual vk::SurfaceKHR create_surface(vk::Instance instance) override;
   virtual std::vector<const char *> required_instance_extensions() override;
   virtual vk::Extent2D extent() override;
+  virtual void init_imgui() override;
 
   void refresh();
 

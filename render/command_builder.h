@@ -4,6 +4,8 @@
 
 #include "image.h"
 
+#include "imgui_impl_vulkan.h"
+
 #include <array>
 
 namespace Render {
@@ -20,6 +22,7 @@ public:
   CommandBuilder &execute_compute(Image &image, vk::Pipeline &pipeline,
                                   vk::PipelineLayout &layout,
                                   vk::DescriptorSet descriptors);
+  CommandBuilder &draw_imgui(Image &image, vk::ImageView image_view);
 
 private:
   void transition_image(Image &image, vk::ImageLayout layout);
