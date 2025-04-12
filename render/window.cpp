@@ -15,7 +15,7 @@ Window::Window(const std::string &title, uint32_t width, uint32_t height) {
   this->width = width;
   this->height = height;
 
-  if (!SDL_Init(SDL_INIT_VIDEO)) {
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
     throw std::runtime_error(
         std::string("SDL could not initialize! SDL error: ") + SDL_GetError());
   }

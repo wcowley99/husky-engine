@@ -1,7 +1,5 @@
 #include "engine.h"
 
-#include "pipelines.h"
-
 #include <cmath>
 #include <iostream>
 
@@ -119,12 +117,8 @@ void Engine::init_descriptors() {
           .add_binding(0, vk::DescriptorType::eStorageImage)
           .build();
 
-  std::cout << "here!" << std::endl;
-
   this->draw_image_descriptors = global_descriptor_allocator->allocate(
       draw_image_descriptor_layouts.get());
-
-  std::cout << "here2!" << std::endl;
 
   vk::DescriptorImageInfo image_info({}, draw_image->image_view.get(),
                                      vk::ImageLayout::eGeneral);
@@ -132,28 +126,14 @@ void Engine::init_descriptors() {
   vk::WriteDescriptorSet write(draw_image_descriptors, 0, {}, 1,
                                vk::DescriptorType::eStorageImage, &image_info);
   device->updateDescriptorSets(1, &write, 0, nullptr);
-
-  std::cout << "here3!" << std::endl;
 }
 
 void Engine::init_pipelines() {
-  vk::PushConstantRange psuh_constant(vk::ShaderStageFlagBits::eCompute, 0,
-                                      sizeof(ComputePushConstant));
-  vk::PipelineLayoutCreateInfo create_info(
-      {}, 1, &draw_image_descriptor_layouts.get(), 1, &psuh_constant);
-
-  std::cout << "creating gradient layout!" << std::endl;
-  this->gradient_layout = vk::UniquePipelineLayout(
-      device->createPipelineLayout(create_info), *device);
-
-  std::cout << "creating gradient pipeline!" << std::endl;
-  this->gradient_pipeline = vk::UniquePipeline(
-      PipelineBuilder(device.get(), gradient_layout.get())
-          .with_module("gradient2.comp", vk::ShaderStageFlagBits::eCompute)
-          .build_compute_pipeline(),
-      *device);
-
-  std::cout << "returning!" << std::endl;
+  this->gradient_compute =
+      ComputePipelineBuilder(device.get(), "gradient2.comp")
+          .add_descriptor_layout(draw_image_descriptor_layouts.get())
+          .add_push_constant(sizeof(ComputePushConstant))
+          .build();
 }
 
 void Engine::init_imgui(Canvas &canvas) {
@@ -237,8 +217,8 @@ void Engine::draw() {
 
   current_frame.command_builder()
       .clear(*draw_image, color)
-      .execute_compute(*draw_image, gradient_pipeline.get(),
-                       gradient_layout.get(), draw_image_descriptors, pc)
+      .execute_compute(*draw_image, *gradient_compute, draw_image_descriptors,
+                       pc)
       .copy_to(*draw_image, swapchain_image)
       .draw_imgui(swapchain_image, *swapchain_image.image_view)
       .present(swapchain_image);

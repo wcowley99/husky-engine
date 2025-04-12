@@ -7,6 +7,7 @@
 #include "vk_base.h"
 
 #include "allocator.h"
+#include "compute_pipeline.h"
 #include "descriptors.h"
 #include "image.h"
 
@@ -66,8 +67,7 @@ private:
   vk::DescriptorSet draw_image_descriptors;
   vk::UniqueDescriptorSetLayout draw_image_descriptor_layouts;
 
-  vk::UniquePipelineLayout gradient_layout;
-  vk::UniquePipeline gradient_pipeline;
+  std::unique_ptr<ComputePipeline> gradient_compute;
 
   std::unique_ptr<DescriptorAllocator> imgui_descriptor_allocator;
 };

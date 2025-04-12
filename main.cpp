@@ -15,6 +15,9 @@ int main(int argc, char *argv[]) {
   bool show = true;
   while (true) {
     while (SDL_PollEvent(&e)) {
+      if (e.type == SDL_EVENT_JOYSTICK_BUTTON_DOWN) {
+        std::cout << "Joystick button pressed!" << std::endl;
+      }
       if (e.type == SDL_EVENT_QUIT ||
           e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) {
         quit = true;

@@ -2,6 +2,7 @@
 
 #include "vk_base.h"
 
+#include "compute_pipeline.h"
 #include "image.h"
 
 #include "imgui_impl_vulkan.h"
@@ -19,8 +20,7 @@ public:
   CommandBuilder &clear(Image &image, std::array<float, 4> color);
   CommandBuilder &copy_to(Image &src, Image &dst);
 
-  CommandBuilder &execute_compute(Image &image, vk::Pipeline &pipeline,
-                                  vk::PipelineLayout &layout,
+  CommandBuilder &execute_compute(Image &image, ComputePipeline &compute,
                                   vk::DescriptorSet descriptors,
                                   const ComputePushConstant &push_constant);
   CommandBuilder &draw_imgui(Image &image, vk::ImageView image_view);

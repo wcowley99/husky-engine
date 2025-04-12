@@ -55,17 +55,19 @@ CommandBuilder &CommandBuilder::clear(Image &image,
   return *this;
 }
 
-CommandBuilder &CommandBuilder::execute_compute(
-    Image &image, vk::Pipeline &pipeline, vk::PipelineLayout &layout,
-    vk::DescriptorSet descriptors, const ComputePushConstant &push_constant) {
+CommandBuilder &
+CommandBuilder::execute_compute(Image &image, ComputePipeline &compute,
+                                vk::DescriptorSet descriptors,
+                                const ComputePushConstant &push_constant) {
   transition_image(image, vk::ImageLayout::eGeneral);
-  command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+  command.bindPipeline(vk::PipelineBindPoint::eCompute, compute.get_pipeline());
 
-  command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, 1,
-                             &descriptors, 0, nullptr);
+  command.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                             compute.get_layout(), 0, 1, &descriptors, 0,
+                             nullptr);
 
-  command.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0,
-                        sizeof(ComputePushConstant), &push_constant);
+  command.pushConstants(compute.get_layout(), vk::ShaderStageFlagBits::eCompute,
+                        0, sizeof(ComputePushConstant), &push_constant);
 
   command.dispatch(std::ceil(image.extent.width / 16.0f),
                    std::ceil(image.extent.height / 16.0f), 1);
