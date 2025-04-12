@@ -2,6 +2,7 @@
 
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 
+#include <glm/glm.hpp>
 #include <vk_mem_alloc.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan.hpp>
@@ -19,6 +20,12 @@
   } while (false)
 
 namespace Render {
+
+struct ComputePushConstant {
+  glm::vec4 top_color;
+  glm::vec4 bottom_color;
+  float padding[8];
+};
 
 namespace VkUtil {
 

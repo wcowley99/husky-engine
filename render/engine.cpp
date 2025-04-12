@@ -137,8 +137,10 @@ void Engine::init_descriptors() {
 }
 
 void Engine::init_pipelines() {
+  vk::PushConstantRange psuh_constant(vk::ShaderStageFlagBits::eCompute, 0,
+                                      sizeof(ComputePushConstant));
   vk::PipelineLayoutCreateInfo create_info(
-      {}, 1, &draw_image_descriptor_layouts.get());
+      {}, 1, &draw_image_descriptor_layouts.get(), 1, &psuh_constant);
 
   std::cout << "creating gradient layout!" << std::endl;
   this->gradient_layout = vk::UniquePipelineLayout(
@@ -147,7 +149,7 @@ void Engine::init_pipelines() {
   std::cout << "creating gradient pipeline!" << std::endl;
   this->gradient_pipeline = vk::UniquePipeline(
       PipelineBuilder(device.get(), gradient_layout.get())
-          .with_module("gradient.comp", vk::ShaderStageFlagBits::eCompute)
+          .with_module("gradient2.comp", vk::ShaderStageFlagBits::eCompute)
           .build_compute_pipeline(),
       *device);
 
@@ -229,10 +231,14 @@ void Engine::draw() {
   std::array<float, 4> color = {0.0f, 0.0f,
                                 std::abs(std::sin(frame_count / 120.0f)), 1.0f};
 
+  ComputePushConstant pc;
+  pc.top_color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+  pc.bottom_color = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+
   current_frame.command_builder()
       .clear(*draw_image, color)
       .execute_compute(*draw_image, gradient_pipeline.get(),
-                       gradient_layout.get(), draw_image_descriptors)
+                       gradient_layout.get(), draw_image_descriptors, pc)
       .copy_to(*draw_image, swapchain_image)
       .draw_imgui(swapchain_image, *swapchain_image.image_view)
       .present(swapchain_image);

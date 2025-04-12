@@ -63,11 +63,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   SDL3::SDL3
   Vulkan::Headers
   GPUOpen::VulkanMemoryAllocator
+  glm::glm
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
   ${SDL3_SOURCE_DIR}/include
   ${VMA_SOURCE_DIR}/include
+  ${GLM_SOURCE_DIR}
   ${IMGUI_SOURCE_DIR}
   ${IMGUI_SOURCE_DIR}/backends
   ${CMAKE_CURRENT_BINARY_DIR}

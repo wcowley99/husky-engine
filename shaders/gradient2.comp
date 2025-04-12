@@ -1,0 +1,23 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba16f, set = 0, binding = 0) uniform image2D image;
+
+layout (push_constant) uniform constants {
+  vec4 top_color;
+  vec4 bottom_color;
+  float padding[8];
+} PushConstants;
+
+void main() {
+  ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+
+  ivec2 size = imageSize(image);
+
+  if (texel.x < size.x && texel.y < size.y) {
+    float blend = float(texel.y) / size.y;
+
+    imageStore(image, texel, mix(PushConstants.top_color, PushConstants.bottom_color, blend));
+  }
+}

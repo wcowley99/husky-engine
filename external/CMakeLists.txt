@@ -2,11 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 add_subdirectory(SDL)
 add_subdirectory(VulkanMemoryAllocator)
+add_subdirectory(glm)
 
 find_package(Vulkan REQUIRED)
-
-message("found vulkan? ${Vulkan_FOUND}")
-
 
 set(IMGUI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/imgui")
 set(IMGUI_SOURCE_DIR ${IMGUI_SOURCE_DIR} PARENT_SCOPE)
@@ -28,4 +26,3 @@ set(IMGUI_SOURCES
   "${IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.h"
   PARENT_SCOPE
 )
-

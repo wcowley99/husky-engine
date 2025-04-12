@@ -21,7 +21,8 @@ public:
 
   CommandBuilder &execute_compute(Image &image, vk::Pipeline &pipeline,
                                   vk::PipelineLayout &layout,
-                                  vk::DescriptorSet descriptors);
+                                  vk::DescriptorSet descriptors,
+                                  const ComputePushConstant &push_constant);
   CommandBuilder &draw_imgui(Image &image, vk::ImageView image_view);
 
 private:

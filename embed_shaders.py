@@ -2,6 +2,8 @@ import argparse
 import os
 import subprocess
 
+print("Generating shaders source files.")
+
 parser = argparse.ArgumentParser()
 parser.add_argument("output_dir", type=str)
 parser.add_argument("source_dir", type=str)
