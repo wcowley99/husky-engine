@@ -14,6 +14,10 @@ endif
 
 all: shaders build
 
+codegen:
+	@mkdir -p $(BUILD_DIR)
+	cmake -S . -B $(DBG_DIR) -DCMAKE_BUILD_TYPE=Debug --target codegen
+
 configure:
 	@mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
