@@ -29,6 +29,8 @@ set(
   "render/engine.h"
   "render/frames.cpp"
   "render/frames.h"
+  "render/graphics_pipeline.cpp"
+  "render/graphics_pipeline.h"
   "render/image.cpp"
   "render/image.h"
   "render/imconfig.h"

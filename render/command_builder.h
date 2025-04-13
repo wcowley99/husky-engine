@@ -3,6 +3,7 @@
 #include "vk_base.h"
 
 #include "compute_pipeline.h"
+#include "graphics_pipeline.h"
 #include "image.h"
 
 #include "imgui_impl_vulkan.h"
@@ -23,6 +24,7 @@ public:
   CommandBuilder &execute_compute(Image &image, ComputePipeline &compute,
                                   vk::DescriptorSet descriptors,
                                   const ComputePushConstant &push_constant);
+  CommandBuilder &execute_graphics(Image &image, GraphicsPipeline &graphics);
   CommandBuilder &draw_imgui(Image &image, vk::ImageView image_view);
 
 private:

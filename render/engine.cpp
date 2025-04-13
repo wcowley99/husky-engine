@@ -134,6 +134,18 @@ void Engine::init_pipelines() {
           .add_descriptor_layout(draw_image_descriptor_layouts.get())
           .add_push_constant(sizeof(ComputePushConstant))
           .build();
+
+  this->triangle_pipeline =
+      GraphicsPipelineBuilder(device.get())
+          .with_vertex_shader("colored_triangle.vert")
+          .with_fragment_shader("colored_triangle.frag")
+          .with_topology(vk::PrimitiveTopology::eTriangleList)
+          .with_polygon_mode(vk::PolygonMode::eFill)
+          .with_cull_mode(vk::CullModeFlagBits::eNone,
+                          vk::FrontFace::eClockwise)
+          .with_color_attachment_format(draw_image->format)
+          .with_depth_attachment_format(vk::Format::eUndefined)
+          .build();
 }
 
 void Engine::init_imgui(Canvas &canvas) {
@@ -219,6 +231,7 @@ void Engine::draw() {
       .clear(*draw_image, color)
       .execute_compute(*draw_image, *gradient_compute, draw_image_descriptors,
                        pc)
+      .execute_graphics(*draw_image, *triangle_pipeline)
       .copy_to(*draw_image, swapchain_image)
       .draw_imgui(swapchain_image, *swapchain_image.image_view)
       .present(swapchain_image);

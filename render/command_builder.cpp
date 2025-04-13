@@ -75,6 +75,35 @@ CommandBuilder::execute_compute(Image &image, ComputePipeline &compute,
   return *this;
 }
 
+CommandBuilder &CommandBuilder::execute_graphics(Image &image,
+                                                 GraphicsPipeline &graphics) {
+  transition_image(image, vk::ImageLayout::eColorAttachmentOptimal);
+
+  vk::RenderingAttachmentInfo color_attachment(
+      *image.image_view, vk::ImageLayout::eColorAttachmentOptimal, {}, {}, {});
+
+  vk::Extent2D extent(image.extent.width, image.extent.height);
+  vk::RenderingInfo render_info({}, vk::Rect2D(vk::Offset2D{0, 0}, extent), 1,
+                                {}, 1, &color_attachment, nullptr);
+
+  command.beginRendering(&render_info);
+
+  command.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                       graphics.get_pipeline());
+
+  vk::Viewport viewport(0.0f, 0.0f, extent.width, extent.height, 0.0f, 1.0f);
+  vk::Rect2D scissor(vk::Offset2D(0, 0), extent);
+
+  command.setViewport(0, 1, &viewport);
+  command.setScissor(0, 1, &scissor);
+
+  command.draw(3, 1, 0, 0);
+
+  command.endRendering();
+
+  return *this;
+}
+
 CommandBuilder &CommandBuilder::draw_imgui(Image &image,
                                            vk::ImageView image_view) {
   transition_image(image, vk::ImageLayout::eColorAttachmentOptimal);

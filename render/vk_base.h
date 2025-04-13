@@ -35,6 +35,9 @@ vk::ImageViewCreateInfo image_view_create_info(vk::Format format,
 
 vk::Offset3D extent_to_offset(vk::Extent3D &extent);
 
+vk::UniqueShaderModule create_shader_module(vk::Device &device,
+                                            const std::string &filename);
+
 } // namespace VkUtil
 
 } // namespace Render
