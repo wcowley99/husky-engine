@@ -184,10 +184,11 @@ void Engine::init_imgui(Canvas &canvas) {
   init_info.PipelineRenderingCreateInfo = create_info;
   /*init_info.MSAASamples = vk::SampleCountFlagBits::e1;*/
 
-  const auto &d = VULKAN_HPP_DEFAULT_DISPATCHER;
   ImGui_ImplVulkan_LoadFunctions(
       VK_MAKE_API_VERSION(0, 1, 3, 0),
       [](const char *function_name, void *vulkan_instance) {
+        const auto &d = VULKAN_HPP_DEFAULT_DISPATCHER;
+
         return d.vkGetInstanceProcAddr(
             *(reinterpret_cast<VkInstance *>(vulkan_instance)), function_name);
       },
