@@ -12,6 +12,10 @@ GraphicsPipeline::GraphicsPipeline(
 
 vk::Pipeline &GraphicsPipeline::get_pipeline() { return this->pipeline.get(); }
 
+vk::PipelineLayout &GraphicsPipeline::get_pipeline_layout() {
+  return this->layout.get();
+}
+
 // GraphicsPipelineBuilder
 GraphicsPipelineBuilder::GraphicsPipelineBuilder(vk::Device &device)
     : device(device) {

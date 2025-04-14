@@ -27,6 +27,19 @@ struct ComputePushConstant {
   float padding[8];
 };
 
+struct MeshPushConstant {
+  glm::mat4 worldMatrix;
+  VkDeviceAddress vertexBuffer;
+};
+
+struct Vertex {
+  glm::vec3 position;
+  float uv_x;
+  glm::vec3 normal;
+  float uv_y;
+  glm::vec4 color;
+};
+
 namespace VkUtil {
 
 vk::ImageViewCreateInfo image_view_create_info(vk::Format format,

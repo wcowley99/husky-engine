@@ -12,6 +12,7 @@ public:
                    vk::GraphicsPipelineCreateInfo &create_info);
 
   vk::Pipeline &get_pipeline();
+  vk::PipelineLayout &get_pipeline_layout();
 
 private:
   vk::UniquePipeline pipeline;

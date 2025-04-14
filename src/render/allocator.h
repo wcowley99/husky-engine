@@ -9,6 +9,7 @@ public:
   Allocator(vk::PhysicalDevice gpu, vk::Device &device, vk::Instance &instance);
   ~Allocator();
 
+public:
   VmaAllocator gpu_allocator;
 };
 

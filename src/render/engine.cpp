@@ -44,10 +44,15 @@ Engine::Engine(Canvas &canvas) {
           .with_memory_properties(vk::MemoryPropertyFlagBits::eDeviceLocal)
           .build(allocator, device.get());
 
-  this->init_descriptors();
+  this->immediate_command = std::make_unique<ImmediateCommand>(
+      device.get(), graphics_queue, queue_family_index);
 
-  std::cout << "past descriptors!" << std::endl;
+  this->init_descriptors();
+  std::cout << "init_pipelines" << std::endl;
   this->init_pipelines();
+  std::cout << "init_buffers" << std::endl;
+  this->init_buffers();
+  std::cout << "init_imgui" << std::endl;
   this->init_imgui(canvas);
 }
 
@@ -138,6 +143,8 @@ void Engine::init_pipelines() {
   this->triangle_pipeline =
       GraphicsPipelineBuilder(device.get())
           .with_vertex_shader("colored_triangle.vert")
+          .add_push_constant(vk::ShaderStageFlagBits::eVertex,
+                             sizeof(MeshPushConstant))
           .with_fragment_shader("colored_triangle.frag")
           .with_topology(vk::PrimitiveTopology::eTriangleList)
           .with_polygon_mode(vk::PolygonMode::eFill)
@@ -146,6 +153,37 @@ void Engine::init_pipelines() {
           .with_color_attachment_format(draw_image->format)
           .with_depth_attachment_format(vk::Format::eUndefined)
           .build();
+
+  this->mesh_pipeline =
+      GraphicsPipelineBuilder(device.get())
+          .with_vertex_shader("colored_triangle_mesh.vert")
+          .add_push_constant(vk::ShaderStageFlagBits::eVertex,
+                             sizeof(MeshPushConstant))
+          .with_fragment_shader("colored_triangle.frag")
+          .with_topology(vk::PrimitiveTopology::eTriangleList)
+          .with_polygon_mode(vk::PolygonMode::eFill)
+          .with_cull_mode(vk::CullModeFlagBits::eNone,
+                          vk::FrontFace::eClockwise)
+          .with_color_attachment_format(draw_image->format)
+          .with_depth_attachment_format(vk::Format::eUndefined)
+          .build();
+}
+
+void Engine::init_buffers() {
+  std::vector<Vertex> vertices(4);
+  vertices[0].position = {0.5, -0.5, 0};
+  vertices[1].position = {0.5, 0.5, 0};
+  vertices[2].position = {-0.5, -0.5, 0};
+  vertices[3].position = {-0.5, 0.5, 0};
+
+  vertices[0].color = {0, 0, 0, 1};
+  vertices[1].color = {0.5, 0.5, 0.5, 1};
+  vertices[2].color = {1, 0, 0, 1};
+  vertices[3].color = {0, 1, 0, 1};
+
+  std::vector<uint32_t> indices = {0, 1, 2, 2, 1, 3};
+  this->mesh_buffer = std::make_unique<MeshBuffer>(
+      *allocator, device.get(), *immediate_command, indices, vertices);
 }
 
 void Engine::init_imgui(Canvas &canvas) {
@@ -232,7 +270,10 @@ void Engine::draw() {
       .clear(*draw_image, color)
       .execute_compute(*draw_image, *gradient_compute, draw_image_descriptors,
                        pc)
+      .begin_rendering(*draw_image)
       .execute_graphics(*draw_image, *triangle_pipeline)
+      .draw_mesh(*draw_image, *mesh_pipeline, *mesh_buffer)
+      .end_rendering()
       .copy_to(*draw_image, swapchain_image)
       .draw_imgui(swapchain_image, *swapchain_image.image_view)
       .present(swapchain_image);

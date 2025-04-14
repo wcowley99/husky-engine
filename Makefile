@@ -31,13 +31,13 @@ release:
 	@mkdir -p $(REL_DIR)
 	cmake -S . -B $(REL_DIR) -DCMAKE_BUILD_TYPE=Release
 	cd $(REL_DIR) && $(BUILD_CMD)
-	$(REL_DIR)/$(EXECUTABLE)
+	$(REL_DIR)/src/$(EXECUTABLE)
 
 debug:
 	@mkdir -p $(DBG_DIR)
 	cmake -S . -B $(DBG_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cd $(DBG_DIR) && $(BUILD_CMD)
-	$(DBG_DIR)/$(EXECUTABLE)
+	$(DBG_DIR)/src/$(EXECUTABLE)
 
 windows:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Release 

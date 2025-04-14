@@ -17,6 +17,8 @@ set(
   RENDER_SOURCES
   "render/allocator.cpp"
   "render/allocator.h"
+  "render/buffer.cpp"
+  "render/buffer.h"
   "render/canvas.h"
   "render/command_builder.h"
   "render/command_builder.cpp"
@@ -33,6 +35,8 @@ set(
   "render/image.cpp"
   "render/image.h"
   "render/imconfig.h"
+  "render/immediate_command.cpp"
+  "render/immediate_command.h"
   "render/swapchain.cpp"
   "render/swapchain.h"
   "render/vk_base.h"

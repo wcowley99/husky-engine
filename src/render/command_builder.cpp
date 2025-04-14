@@ -41,6 +41,34 @@ void CommandBuilder::transition_image(Image &image,
   command.pipelineBarrier2(dep_info);
 }
 
+CommandBuilder &CommandBuilder::begin_rendering(Image &image) {
+  transition_image(image, vk::ImageLayout::eColorAttachmentOptimal);
+
+  vk::RenderingAttachmentInfo color_attachment(
+      *image.image_view, vk::ImageLayout::eColorAttachmentOptimal, {}, {}, {});
+
+  vk::Extent2D extent(image.extent.width, image.extent.height);
+  vk::RenderingInfo render_info({}, vk::Rect2D(vk::Offset2D{0, 0}, extent), 1,
+                                {}, 1, &color_attachment, nullptr);
+
+  command.beginRendering(&render_info);
+
+  vk::Viewport viewport(0.0f, 0.0f, image.extent.width, image.extent.height,
+                        0.0f, 1.0f);
+  vk::Rect2D scissor(vk::Offset2D(0, 0), extent);
+
+  command.setViewport(0, 1, &viewport);
+  command.setScissor(0, 1, &scissor);
+
+  return *this;
+}
+
+CommandBuilder &CommandBuilder::end_rendering() {
+  command.endRendering();
+
+  return *this;
+}
+
 CommandBuilder &CommandBuilder::clear(Image &image,
                                       std::array<float, 4> color) {
   transition_image(image, vk::ImageLayout::eGeneral);
@@ -77,29 +105,30 @@ CommandBuilder::execute_compute(Image &image, ComputePipeline &compute,
 
 CommandBuilder &CommandBuilder::execute_graphics(Image &image,
                                                  GraphicsPipeline &graphics) {
-  transition_image(image, vk::ImageLayout::eColorAttachmentOptimal);
-
-  vk::RenderingAttachmentInfo color_attachment(
-      *image.image_view, vk::ImageLayout::eColorAttachmentOptimal, {}, {}, {});
-
-  vk::Extent2D extent(image.extent.width, image.extent.height);
-  vk::RenderingInfo render_info({}, vk::Rect2D(vk::Offset2D{0, 0}, extent), 1,
-                                {}, 1, &color_attachment, nullptr);
-
-  command.beginRendering(&render_info);
-
   command.bindPipeline(vk::PipelineBindPoint::eGraphics,
                        graphics.get_pipeline());
 
-  vk::Viewport viewport(0.0f, 0.0f, extent.width, extent.height, 0.0f, 1.0f);
-  vk::Rect2D scissor(vk::Offset2D(0, 0), extent);
-
-  command.setViewport(0, 1, &viewport);
-  command.setScissor(0, 1, &scissor);
-
   command.draw(3, 1, 0, 0);
 
-  command.endRendering();
+  return *this;
+}
+
+CommandBuilder &CommandBuilder::draw_mesh(Image &image,
+                                          GraphicsPipeline &graphics,
+                                          MeshBuffer &mesh_buffer) {
+  command.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                       graphics.get_pipeline());
+
+  MeshPushConstant pc;
+  pc.worldMatrix = glm::mat4(1.0f);
+  pc.vertexBuffer = mesh_buffer.get_vertex_buffer_address();
+
+  command.pushConstants(graphics.get_pipeline_layout(),
+                        vk::ShaderStageFlagBits::eVertex, 0,
+                        sizeof(MeshPushConstant), &pc);
+  command.bindIndexBuffer(mesh_buffer.get_index_buffer().get_buffer(), 0,
+                          vk::IndexType::eUint32);
+  command.drawIndexed(6, 1, 0, 0, 0);
 
   return *this;
 }

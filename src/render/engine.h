@@ -7,10 +7,12 @@
 #include "vk_base.h"
 
 #include "allocator.h"
+#include "buffer.h"
 #include "compute_pipeline.h"
 #include "descriptors.h"
 #include "graphics_pipeline.h"
 #include "image.h"
+#include "immediate_command.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -45,6 +47,7 @@ private:
   void init_device();
   void init_descriptors();
   void init_pipelines();
+  void init_buffers();
   void init_imgui(Canvas &canvas);
   vk::UniqueDevice create_device();
 
@@ -71,7 +74,12 @@ private:
   std::unique_ptr<ComputePipeline> gradient_compute;
   std::unique_ptr<GraphicsPipeline> triangle_pipeline;
 
+  std::unique_ptr<GraphicsPipeline> mesh_pipeline;
+  std::unique_ptr<MeshBuffer> mesh_buffer;
+
   std::unique_ptr<DescriptorAllocator> imgui_descriptor_allocator;
+
+  std::unique_ptr<ImmediateCommand> immediate_command;
 };
 
 } // namespace Render
