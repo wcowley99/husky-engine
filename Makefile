@@ -1,46 +1,38 @@
-BUILD_DIR = out
-DBG_DIR = out/debug
-REL_DIR = out/release
+OUT = out
+SRC = src
+EXE = mordor
 
-ifeq ($(OS),Windows_NT)
-	BUILD_CMD = msbuild Husky.sln
-	EXECUTABLE = Husky.exe
-else
-	BUILD_CMD = make
-	EXECUTABLE = Husky
-endif
+CC = gcc
+INCLUDE = -Iexternal/SDL/include
+CFLAGS := $(INCLUDE) -Wall
 
-.PHONY: all build run clean configure shaders
+HEADERS := $(wildcard *.h) $(wildcard $(SRC)/*.h)
+SOURCES := $(wildcard *.c) $(wildcard $(SRC)/*.c)
 
-all: shaders build
+OBJS := $(patsubst src/%.c, out/%.o, $(SOURCES))
+LIBS = -Lout -lSDL3 -Wl,-rpath=. -lvulkan
 
-codegen:
-	@mkdir -p $(BUILD_DIR)
-	cmake -S . -B $(DBG_DIR) -DCMAKE_BUILD_TYPE=Debug --target codegen
+.PHONY: default deps build clean run
 
-configure:
-	@mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
-	cd $(BUILD_DIR) && mv compile_commands.json ../compile_commands.json
+default: build
+
+deps:
+	# Build SDL
+	cmake -S external/SDL -B out/SDL
+	cmake --build out/SDL
+	cp out/SDL/libSDL3.so out/
+
+build: $(OUT)/$(EXE)
+
+run: $(OUT)/$(EXE)
+	cd $(OUT) && ./$(EXE)
 
 clean:
-	rm compile_commands.json
-	rm -rf $(BUILD_DIR)
+	rm -rf out
 
-release:
-	@mkdir -p $(REL_DIR)
-	cmake -S . -B $(REL_DIR) -DCMAKE_BUILD_TYPE=Release
-	cd $(REL_DIR) && $(BUILD_CMD)
-	$(REL_DIR)/src/$(EXECUTABLE)
+$(OUT)/%.o: $(SRC)/%.c $(HEADERS)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
 
-debug:
-	@mkdir -p $(DBG_DIR)
-	cmake -S . -B $(DBG_DIR) -DCMAKE_BUILD_TYPE=Debug
-	cd $(DBG_DIR) && $(BUILD_CMD)
-	$(DBG_DIR)/src/$(EXECUTABLE)
-
-windows:
-	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Release 
-	cd $(BUILD_DIR) && $(BUILD_CMD)
-	cp SDL3.dll $(BUILD_DIR)\Debug
-	cd $(BUILD_DIR)\Debug && $(EXECUTABLE)
+$(OUT)/$(EXE): $(OBJS) deps
+	gcc $(OBJS) $(CFLAGS) $(LIBS) -o $@
