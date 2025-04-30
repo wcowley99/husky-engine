@@ -3,7 +3,7 @@ SRC = src
 EXE = mordor
 
 CC = gcc
-INCLUDE = -Iexternal/SDL/include
+INCLUDE = -Iexternal/SDL/include -Iexternal/volk
 CFLAGS := $(INCLUDE) -Wall
 
 HEADERS := $(wildcard *.h) $(wildcard $(SRC)/*.h)
@@ -14,7 +14,7 @@ LIBS = -Lout -lSDL3 -Wl,-rpath=. -lvulkan
 
 .PHONY: default deps build clean run
 
-default: build
+default: run
 
 deps:
 	# Build SDL
@@ -27,12 +27,15 @@ build: $(OUT)/$(EXE)
 run: $(OUT)/$(EXE)
 	cd $(OUT) && ./$(EXE)
 
+valgrind: $(OUT)/$(EXE)
+	cd $(OUT) && valgrind --leak-check=yes ./$(EXE)
+
 clean:
 	rm -rf out
 
 $(OUT)/%.o: $(SRC)/%.c $(HEADERS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -g $(CFLAGS) -c $< -o $@
 
 $(OUT)/$(EXE): $(OBJS) deps
-	gcc $(OBJS) $(CFLAGS) $(LIBS) -o $@
+	$(CC) $(OBJS) -g $(CFLAGS) $(LIBS) -o $@

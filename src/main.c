@@ -2,9 +2,6 @@
 
 #include <SDL3/SDL.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-
 bool should_quit(SDL_Event *e) {
   return e->type == SDL_EVENT_QUIT ||
          (e->type == SDL_EVENT_KEY_DOWN && e->key.key == SDLK_ESCAPE);
