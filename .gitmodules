@@ -9,4 +9,4 @@
 	url = git@github.com:nothings/stb.git
 [submodule "external/volk"]
 	path = external/volk
-	url = git@github.com:gnuradio/volk.git
+	url = git@github.com:zeux/volk.git

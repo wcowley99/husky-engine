@@ -1,0 +1,47 @@
+CC = cl
+
+OUT = out
+SRC = src
+EXE = civ-game.exe
+
+HEADERS = $(wilcard *.h) $(wildcard $(SRC)\*.h)
+SOURCES = $(wilcard *.c) $(wildcard $(SRC)/*.c)
+
+OBJS = $(patsubst $(SRC)/%.c, $(OUT)/%.obj, $(SOURCES))
+
+SDL_INCLUDE_DIR  = .\external\SDL\include
+VOLK_INCLUDE_DIR = .\external\volk
+
+VULKAN_INCLUDE_DIR := $(VULKAN_SDK)\Include
+VULKAN_LIB_DIR := $(VULKAN_SDK)\Lib
+
+INCLUDE_FLAGS := /I $(SDL_INCLUDE_DIR) /I $(VOLK_INCLUDE_DIR) /I $(VULKAN_INCLUDE_DIR)
+LIB_FLAGS := /link /LIBPATH:"$(OUT)" SDL3.lib /LIBPATH:"$(VULKAN_LIB_DIR)" vulkan-1.lib
+
+CFLAGS = /W4 /O1
+
+.PHONY: all deps build run clean
+
+all: run
+
+# Build SDL
+deps:
+	cmake -S external/SDL -B $(OUT)/SDL
+	cmake --build $(OUT)/SDL --config Release
+	@powershell -Command "cp $(OUT)/SDL/Release/* $(OUT)/"
+
+run: build
+	cd $(OUT) && .\$(EXE)
+
+build: $(OUT)/$(EXE)
+
+clean:
+	@powershell -Command "rm -r -fo $(OUT)"
+
+$(OUT)/$(EXE): $(OBJS) deps
+	$(CC) $(OBJS) /Fe"$(OUT)/$(EXE)" $(LIB_FLAGS)
+
+$(OUT)/%.obj: $(SRC)/%.c $(HEADERS)
+	if not exist $(OUT) md $(OUT)
+	$(CC) /c $< /Fo"$@" $(INCLUDE_FLAGS) $(CFLAGS)
+
