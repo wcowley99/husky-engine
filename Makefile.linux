@@ -15,7 +15,7 @@ HEXEMBED := ./$(OUT)/hexembed
 
 CC = gcc
 CXX = g++
-INCLUDE := -Iexternal/SDL/include -Iexternal/volk -Iexternal/VulkanMemoryAllocator/include -I$(OUT)/$(SHADERS)
+INCLUDE := -Iexternal/SDL/include -Iexternal/volk -Iexternal/VulkanMemoryAllocator/include -Iexternal/cglm/include -I$(OUT)/$(SHADERS)
 LIBS = -Lout -lSDL3 -Wl,-rpath=. -lvulkan -lm
 CFLAGS := $(INCLUDE) -Wall
 
@@ -30,9 +30,8 @@ default: run
 
 libs: sdl vma
 sdl:
-	cmake -S external/SDL -B out/SDL
-	cmake --build out/SDL
-	cp out/SDL/libSDL3.so out/
+	cmake -S external/SDL -B out/SDL && cmake --build out/SDL
+	cp out/SDL/libSDL3.so out/ && cp out/SDL/libSDL3.so.0 out/
 
 vma: $(OUT)/vma.o
 $(OUT)/vma.o: external/VulkanMemoryAllocator/src/VmaUsage.cpp 
@@ -40,12 +39,13 @@ $(OUT)/vma.o: external/VulkanMemoryAllocator/src/VmaUsage.cpp
 
 scripts: $(SCRIPTS)
 $(OUT)/%: $(SCRIPTS_DIR)/%.c
+	@mkdir -p $(@D)
 	@echo "Compiling processing script $< ...."
 	@$(CC) -o $@ $<
 
 shaders: $(VERT) $(FRAG) $(COMP)
 $(OUT)/$(SHADERS)/%_vert.h: $(SHADERS)/%.vert
-	@mkdir -p $(OUT)/$(SHADERS)
+	@mkdir -p $(@D)
 	@echo "Generating embeddable C file for $< ...."
 	glslc $< -o $(OUT)/$(SHADERS)/$*_vert.spv && $(HEXEMBED) $(OUT)/$(SHADERS)/$*_vert.spv $*_vert > $@
 
