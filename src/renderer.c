@@ -1,5 +1,7 @@
 #include "renderer.h"
 
+#include "colored_triangle_frag.h"
+#include "colored_triangle_vert.h"
 #include "gradient2_comp.h"
 #include "gradient_comp.h"
 
@@ -12,6 +14,87 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+///////////////////////////////////////
+/// Buffer
+///////////////////////////////////////
+
+bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags,
+                   VmaMemoryUsage usage, Buffer *buffer) {
+  VkBufferCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = size,
+      .usage = flags,
+  };
+
+  VmaAllocationCreateInfo alloc_info = {
+      .usage = usage,
+      .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
+  };
+
+  VK_EXPECT(vmaCreateBuffer(allocator, &create_info, &alloc_info, &buffer->buffer,
+                            &buffer->allocation, &buffer->info));
+  return true;
+}
+
+void buffer_destroy(Buffer *buffer, VmaAllocator allocator) {
+  vmaDestroyBuffer(allocator, buffer->buffer, buffer->allocation);
+}
+
+void buffer_fill(Buffer *buffer, VmaAllocator allocator, const void *data, size_t size,
+                 size_t offset) {
+  vmaCopyMemoryToAllocation(allocator, data, buffer->allocation, offset, size);
+}
+
+///////////////////////////////////////
+/// Mesh Buffer
+///////////////////////////////////////
+
+bool mesh_buffer_create(VmaAllocator allocator, VkDevice device, VkQueue queue,
+                        ImmediateCommand *immediate, Mesh *mesh, MeshBuffer *buffer) {
+  const VkBufferUsageFlags VERTEX_USAGE = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  const VkBufferUsageFlags INDEX_USAGE =
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+  const size_t vertex_size = sizeof(Vertex) * mesh->vertex_count;
+  const size_t index_size = sizeof(uint32_t) * mesh->index_count;
+  EXPECT(buffer_create(allocator, vertex_size, VERTEX_USAGE, VMA_MEMORY_USAGE_GPU_ONLY,
+                       &buffer->vertex));
+  EXPECT(
+      buffer_create(allocator, index_size, INDEX_USAGE, VMA_MEMORY_USAGE_GPU_ONLY, &buffer->index));
+
+  VkBufferDeviceAddressInfo address_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+      .buffer = buffer->vertex.buffer,
+  };
+
+  Buffer staging_buffer;
+  buffer_create(allocator, vertex_size + index_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
+  buffer_fill(&staging_buffer, allocator, mesh->vertices, vertex_size, 0);
+  buffer_fill(&staging_buffer, allocator, mesh->indices, index_size, vertex_size);
+
+  immediate_command_begin(immediate);
+
+  VkBufferCopy vertex_copy = {.srcOffset = 0, .dstOffset = 0, .size = vertex_size};
+  VkBufferCopy index_copy = {.srcOffset = vertex_size, .dstOffset = 0, .size = index_size};
+  vkCmdCopyBuffer(immediate->command, staging_buffer.buffer, buffer->vertex.buffer, 1,
+                  &vertex_copy);
+  vkCmdCopyBuffer(immediate->command, staging_buffer.buffer, buffer->index.buffer, 1, &index_copy);
+
+  immediate_command_end(immediate, device, queue);
+
+  buffer_destroy(&staging_buffer, allocator);
+
+  return true;
+}
+
+void mesh_buffer_destroy(MeshBuffer *buffer, VmaAllocator allocator) {
+  buffer_destroy(&buffer->vertex, allocator);
+  buffer_destroy(&buffer->index, allocator);
+}
 
 ///////////////////////////////////////
 /// Image
@@ -300,6 +383,142 @@ void compute_pipeline_destroy(ComputePipeline *p, VkDevice device) {
 }
 
 ///////////////////////////////////////
+/// Graphics Pipeline
+///////////////////////////////////////
+
+bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
+                              GraphicsPipeline *pipeline) {
+  VkPipelineViewportStateCreateInfo viewport = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .viewportCount = 1,
+      .scissorCount = 1,
+  };
+
+  VkPipelineColorBlendAttachmentState color_attachment = {
+      .blendEnable = VK_FALSE,
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+  };
+
+  VkPipelineColorBlendStateCreateInfo color_blend = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .logicOpEnable = VK_FALSE,
+      .logicOp = VK_LOGIC_OP_COPY,
+      .attachmentCount = 1,
+      .pAttachments = &color_attachment,
+  };
+
+  VkPipelineDepthStencilStateCreateInfo depth_testing = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+      .depthCompareOp = VK_COMPARE_OP_NEVER,
+      .minDepthBounds = 0.0f,
+      .maxDepthBounds = 1.0f,
+  };
+
+  VkPipelineVertexInputStateCreateInfo vertex_input = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+  };
+
+  VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .primitiveRestartEnable = VK_FALSE,
+      .topology = create_info->topology,
+  };
+
+  VkPipelineMultisampleStateCreateInfo multisample = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+      .sampleShadingEnable = VK_FALSE,
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+      .minSampleShading = 1.0f,
+      .alphaToCoverageEnable = VK_FALSE,
+      .alphaToOneEnable = VK_FALSE,
+  };
+
+  VkPipelineRenderingCreateInfo render_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+      .colorAttachmentCount = 1,
+      .pColorAttachmentFormats = &create_info->color_attachment_format,
+      .depthAttachmentFormat = create_info->depth_attachment_format,
+  };
+
+  VkPipelineRasterizationStateCreateInfo rasterization = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .polygonMode = create_info->polygon_mode,
+      .lineWidth = 1.0f,
+      .cullMode = create_info->cull_mode,
+      .frontFace = create_info->front_face,
+  };
+
+  VkDynamicState state[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo dynamic_state = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+      .dynamicStateCount = 2,
+      .pDynamicStates = state,
+  };
+
+  VkShaderModule vertex;
+  VkShaderModule fragment;
+  EXPECT(vk_create_shader_module(&vertex, create_info->vertex_shader,
+                                 create_info->vertex_shader_size, device));
+  EXPECT(vk_create_shader_module(&fragment, create_info->fragment_shader,
+                                 create_info->fragment_shader_size, device));
+
+  VkPipelineShaderStageCreateInfo shaders[] = {
+      {
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_VERTEX_BIT,
+          .module = vertex,
+          .pName = "main",
+      },
+      {
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+          .module = fragment,
+          .pName = "main",
+      },
+  };
+
+  VkPipelineLayoutCreateInfo layout_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pSetLayouts = create_info->descriptors,
+      .setLayoutCount = create_info->num_descriptors,
+      .pPushConstantRanges = create_info->push_constants,
+      .pushConstantRangeCount = create_info->num_push_constants,
+  };
+
+  VK_EXPECT(vkCreatePipelineLayout(device, &layout_info, NULL, &pipeline->layout));
+
+  VkGraphicsPipelineCreateInfo pipeline_info = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .stageCount = 2,
+      .pStages = shaders,
+      .pVertexInputState = &vertex_input,
+      .pInputAssemblyState = &input_assembly,
+      .pViewportState = &viewport,
+      .pRasterizationState = &rasterization,
+      .pMultisampleState = &multisample,
+      .pColorBlendState = &color_blend,
+      .pDepthStencilState = &depth_testing,
+      .layout = pipeline->layout,
+      .pDynamicState = &dynamic_state,
+      .pNext = &render_info,
+  };
+
+  VK_EXPECT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
+                                      &pipeline->pipeline));
+
+  vkDestroyShaderModule(device, vertex, NULL);
+  vkDestroyShaderModule(device, fragment, NULL);
+
+  return true;
+}
+
+void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device) {
+  vkDestroyPipelineLayout(device, pipeline->layout, NULL);
+  vkDestroyPipeline(device, pipeline->pipeline, NULL);
+}
+
+///////////////////////////////////////
 /// Swapchain
 ///////////////////////////////////////
 bool swapchain_create(VkDevice device, VkPhysicalDevice gpu, VkSurfaceKHR surface,
@@ -408,6 +627,63 @@ bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDevice devi
 }
 
 ///////////////////////////////////////
+/// Immediate Command
+///////////////////////////////////////
+
+bool immediate_command_create(VkDevice device, uint32_t queue_family_index,
+                              ImmediateCommand *command) {
+  VkFenceCreateInfo fence_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .flags = {},
+  };
+  VK_EXPECT(vkCreateFence(device, &fence_info, NULL, &command->fence));
+
+  VkCommandPoolCreateInfo command_pool_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = queue_family_index,
+      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+  };
+  VK_EXPECT(vkCreateCommandPool(device, &command_pool_info, NULL, &command->pool));
+
+  VkCommandBufferAllocateInfo alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandBufferCount = 1,
+      .commandPool = command->pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+  };
+  VK_EXPECT(vkAllocateCommandBuffers(device, &alloc_info, &command->command));
+
+  return true;
+}
+
+void immediate_command_destroy(ImmediateCommand *command, VkDevice device) {
+  vkDestroyCommandPool(device, command->pool, NULL);
+  vkDestroyFence(device, command->fence, NULL);
+}
+
+void immediate_command_begin(ImmediateCommand *command) {
+  VkCommandBufferBeginInfo begin = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+  };
+  vkBeginCommandBuffer(command->command, &begin);
+}
+
+void immediate_command_end(ImmediateCommand *command, VkDevice device, VkQueue queue) {
+  vkEndCommandBuffer(command->command);
+  VkSubmitInfo submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pCommandBuffers = &command->command,
+      .commandBufferCount = 1,
+  };
+  vkQueueSubmit(queue, 1, &submit_info, command->fence);
+  vkWaitForFences(device, 1, &command->fence, VK_TRUE, 1000000000);
+
+  vkResetFences(device, 1, &command->fence);
+  vkResetCommandPool(device, command->pool, 0);
+}
+
+///////////////////////////////////////
 /// Renderer
 ///////////////////////////////////////
 bool renderer_init(Renderer *r, RendererCreateInfo *c) {
@@ -436,6 +712,19 @@ bool renderer_init(Renderer *r, RendererCreateInfo *c) {
   EXPECT(swapchain_create(r->device, r->gpu, r->surface, r->queue_family_index, &r->swapchain));
 
   EXPECT(vma_allocator(&r->allocator, r->instance, r->gpu, r->device));
+
+  EXPECT(immediate_command_create(r->device, r->queue_family_index, &r->immediate));
+
+  Vertex vertices[4] = {
+      {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
+      {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
+      {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+      {.position = {-0.5f, 0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+  };
+  uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
+  Mesh mesh = {.vertices = vertices, .vertex_count = 4, .indices = indices, .index_count = 6};
+  EXPECT(mesh_buffer_create(r->allocator, r->device, r->graphics_queue, &r->immediate, &mesh,
+                            &r->mesh));
 
   AllocatedImageCreateInfo allocated_image_info = {
       .extent =
@@ -495,6 +784,20 @@ bool renderer_init(Renderer *r, RendererCreateInfo *c) {
   };
   EXPECT(compute_pipeline_create(&r->gradient_pipeline, &pipeline_info, r->device));
 
+  GraphicsPipelineCreateInfo graphics_pipeline_info = {
+      .vertex_shader = (const uint32_t *)colored_triangle_vert_file,
+      .vertex_shader_size = colored_triangle_vert_size / 4,
+      .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
+      .fragment_shader_size = colored_triangle_frag_size / 4,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      .polygon_mode = VK_POLYGON_MODE_FILL,
+      .cull_mode = VK_CULL_MODE_NONE,
+      .front_face = VK_FRONT_FACE_CLOCKWISE,
+      .color_attachment_format = r->draw_image.image.format,
+      .depth_attachment_format = VK_FORMAT_UNDEFINED,
+  };
+  EXPECT(graphics_pipeline_create(r->device, &graphics_pipeline_info, &r->triangle_pipeline));
+
   return true;
 }
 
@@ -502,13 +805,18 @@ void renderer_shutdown(Renderer *r) {
   // Make sure the GPU has finished all work
   vkDeviceWaitIdle(r->device);
 
+  mesh_buffer_destroy(&r->mesh, r->allocator);
+
   compute_pipeline_destroy(&r->gradient_pipeline, r->device);
+  graphics_pipeline_destroy(&r->triangle_pipeline, r->device);
 
   descriptor_allocator_destroy(&r->global_descriptor_allocator, r->device);
   vkDestroyDescriptorSetLayout(r->device, r->draw_image_descriptor_layout, NULL);
 
   allocated_image_destroy(&r->draw_image, r->device, r->allocator);
+
   vmaDestroyAllocator(r->allocator);
+  immediate_command_destroy(&r->immediate, r->device);
 
   swapchain_destroy(&r->swapchain, r->device);
 
@@ -553,6 +861,7 @@ void renderer_draw(Renderer *r) {
   };
   vkCmdClearColorImage(frame->command, draw_image->image, draw_image->layout, &color, 1, &range);
 
+  // compute pipeline
   image_transition(draw_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
   vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_COMPUTE, r->gradient_pipeline.pipeline);
 
@@ -572,6 +881,44 @@ void renderer_draw(Renderer *r) {
 
   vkCmdDispatch(frame->command, ceilf(draw_image->extent.width / 16.0f),
                 ceilf(draw_image->extent.height / 16.0f), 1);
+
+  // graphics pipeline
+  image_transition(draw_image, frame->command, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  VkRenderingAttachmentInfo color_attachment = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+      .imageView = draw_image->image_view,
+      .imageLayout = draw_image->layout,
+  };
+  VkRect2D scissor = {
+      {0, 0},
+      {.width = draw_image->extent.width, .height = draw_image->extent.height},
+  };
+  VkRenderingInfo render_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+      .renderArea = scissor,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &color_attachment,
+      .layerCount = 1,
+  };
+
+  vkCmdBeginRendering(frame->command, &render_info);
+
+  VkViewport viewport = {
+      .x = 0,
+      .y = 0,
+      .width = draw_image->extent.width,
+      .height = draw_image->extent.height,
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f,
+  };
+  vkCmdSetViewport(frame->command, 0, 1, &viewport);
+  vkCmdSetScissor(frame->command, 0, 1, &scissor);
+
+  vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, r->triangle_pipeline.pipeline);
+  vkCmdDraw(frame->command, 3, 1, 0, 0);
+
+  vkCmdEndRendering(frame->command);
 
   image_transition(draw_image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
   image_transition(image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);

@@ -36,6 +36,72 @@ vk_validation_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
 
 ///////////////////////////////////////
+/// Immediate Command
+///////////////////////////////////////
+
+typedef struct {
+  VkCommandPool pool;
+  VkCommandBuffer command;
+  VkFence fence;
+} ImmediateCommand;
+
+bool immediate_command_create(VkDevice device, uint32_t queue_family_index,
+                              ImmediateCommand *command);
+
+void immediate_command_destroy(ImmediateCommand *command, VkDevice device);
+
+void immediate_command_begin(ImmediateCommand *command);
+void immediate_command_end(ImmediateCommand *command, VkDevice device, VkQueue queue);
+
+///////////////////////////////////////
+/// Buffer
+///////////////////////////////////////
+
+typedef struct {
+  VkBuffer buffer;
+  VmaAllocation allocation;
+  VmaAllocationInfo info;
+} Buffer;
+
+bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags,
+                   VmaMemoryUsage usage, Buffer *buffer);
+
+void buffer_destroy(Buffer *buffer, VmaAllocator allocator);
+
+void buffer_fill(Buffer *buffer, VmaAllocator allocator, const void *data, size_t size,
+                 size_t offset);
+
+///////////////////////////////////////
+/// Mesh
+///////////////////////////////////////
+
+typedef struct {
+  vec3 position;
+  float uv_x;
+  vec3 normal;
+  float uv_y;
+  vec4 color;
+} Vertex;
+
+typedef struct {
+  Vertex *vertices;
+  uint32_t vertex_count;
+  uint32_t *indices;
+  uint32_t index_count;
+} Mesh;
+
+typedef struct {
+  Buffer vertex;
+  Buffer index;
+  VkDeviceAddress vertex_address;
+} MeshBuffer;
+
+bool mesh_buffer_create(VmaAllocator allocator, VkDevice device, VkQueue queue,
+                        ImmediateCommand *immediate, Mesh *mesh, MeshBuffer *buffer);
+
+void mesh_buffer_destroy(MeshBuffer *buffer, VmaAllocator allocator);
+
+///////////////////////////////////////
 /// Image
 ///////////////////////////////////////
 typedef struct {
@@ -115,6 +181,41 @@ bool compute_pipeline_create(ComputePipeline *p, ComputePipelineInfo *info, VkDe
 void compute_pipeline_destroy(ComputePipeline *p, VkDevice device);
 
 ///////////////////////////////////////
+/// Graphics Pipeline
+///////////////////////////////////////
+
+typedef struct {
+  VkDescriptorSetLayout *descriptors;
+  uint32_t num_descriptors;
+
+  const VkPushConstantRange *push_constants;
+  uint32_t num_push_constants;
+
+  VkPrimitiveTopology topology;
+  VkPolygonMode polygon_mode;
+  VkCullModeFlagBits cull_mode;
+  VkFrontFace front_face;
+  VkFormat color_attachment_format;
+  VkFormat depth_attachment_format;
+
+  const uint32_t *vertex_shader;
+  uint32_t vertex_shader_size;
+
+  const uint32_t *fragment_shader;
+  uint32_t fragment_shader_size;
+} GraphicsPipelineCreateInfo;
+
+typedef struct {
+  VkPipeline pipeline;
+  VkPipelineLayout layout;
+} GraphicsPipeline;
+
+bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
+                              GraphicsPipeline *pipeline);
+
+void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device);
+
+///////////////////////////////////////
 /// Swapchain
 ///////////////////////////////////////
 
@@ -184,7 +285,12 @@ typedef struct {
   VkDescriptorSetLayout draw_image_descriptor_layout;
   VkDescriptorSet draw_image_descriptors;
 
+  ImmediateCommand immediate;
+
   ComputePipeline gradient_pipeline;
+  GraphicsPipeline triangle_pipeline;
+
+  MeshBuffer mesh;
 } Renderer;
 
 // Renderer Core Functions
