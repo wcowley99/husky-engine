@@ -3,6 +3,9 @@
 #include <SDL3/SDL.h>
 
 #define VK_NO_PROTOTYPES
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#include <vk_mem_alloc.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan.h>
 
@@ -32,13 +35,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_validation_callback(
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
 
-typedef struct {
-  uint32_t width;
-  uint32_t height;
-  const char *title;
-  bool debug;
-} RendererCreateInfo;
-
 ///////////////////////////////////////
 /// Image
 ///////////////////////////////////////
@@ -58,6 +54,28 @@ void image_destroy(Image *image, VkDevice device);
 void image_transition(Image *image, VkCommandBuffer command,
                       VkImageLayout layout);
 
+void image_blit(VkCommandBuffer command, Image *src, Image *dst);
+
+typedef struct {
+  VkExtent3D extent;
+  VkFormat format;
+  VkImageUsageFlags usage_flags;
+  VmaMemoryUsage memory_usage;
+  VkMemoryPropertyFlags memory_props;
+} AllocatedImageCreateInfo;
+
+typedef struct {
+  Image image;
+  VmaAllocation allocation;
+} AllocatedImage;
+
+bool allocated_image_create(VkDevice device, VmaAllocator allocator,
+                            AllocatedImageCreateInfo *info,
+                            AllocatedImage *image);
+
+void allocated_image_destroy(AllocatedImage *image, VkDevice device,
+                             VmaAllocator allocator);
+
 ///////////////////////////////////////
 /// FrameResources
 ///////////////////////////////////////
@@ -75,6 +93,31 @@ bool frame_resources_create(VkDevice device, uint32_t queue_family_index,
 void frame_resources_destroy(FrameResources *f, VkDevice device);
 
 bool frame_resources_submit(FrameResources *f, VkQueue graphics_queue);
+
+///////////////////////////////////////
+/// Compute Pipeline
+///////////////////////////////////////
+
+typedef struct {
+  VkDescriptorSetLayout *descriptors;
+  uint32_t num_descriptors;
+
+  const uint32_t *push_constant_sizes;
+  uint32_t num_push_constant_sizes;
+
+  const uint32_t *shader_source;
+  uint32_t shader_source_size;
+} ComputePipelineInfo;
+
+typedef struct {
+  VkPipeline pipeline;
+  VkPipelineLayout layout;
+} ComputePipeline;
+
+bool compute_pipeline_create(ComputePipeline *p, ComputePipelineInfo *info,
+                             VkDevice device);
+
+void compute_pipeline_destroy(ComputePipeline *p, VkDevice device);
 
 ///////////////////////////////////////
 /// Swapchain
@@ -100,8 +143,38 @@ bool swapchain_next_frame(Swapchain *sc, VkDevice device,
                           uint32_t *image_index);
 
 ///////////////////////////////////////
+/// Descriptor Allocator
+///////////////////////////////////////
+
+typedef struct {
+  VkDescriptorPool pool;
+} DescriptorAllocator;
+
+bool descriptor_allocator_create(DescriptorAllocator *allocator,
+                                 VkDevice device);
+
+void descriptor_allocator_destroy(DescriptorAllocator *allocator,
+                                  VkDevice device);
+
+void descriptor_allocator_clear(DescriptorAllocator *allocator,
+                                VkDevice device);
+
+bool descriptor_allocator_allocate(DescriptorAllocator *allocator,
+                                   VkDevice device,
+                                   VkDescriptorSetLayout *layouts,
+                                   uint32_t count, VkDescriptorSet *sets);
+
+///////////////////////////////////////
 /// Renderer
 ///////////////////////////////////////
+
+typedef struct {
+  uint32_t width;
+  uint32_t height;
+  const char *title;
+  bool debug;
+} RendererCreateInfo;
+
 typedef struct {
   SDL_Window *window;
 
@@ -113,7 +186,16 @@ typedef struct {
   VkDevice device;
   VkQueue graphics_queue;
 
+  VmaAllocator allocator;
+
   Swapchain swapchain;
+  AllocatedImage draw_image;
+
+  DescriptorAllocator global_descriptor_allocator;
+  VkDescriptorSetLayout draw_image_descriptor_layout;
+  VkDescriptorSet draw_image_descriptors;
+
+  ComputePipeline gradient_pipeline;
 } Renderer;
 
 // Renderer Core Functions
@@ -126,6 +208,9 @@ void renderer_draw(Renderer *r);
 // Vulkan Initialization Functions
 
 void vk_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *info);
+
+bool vma_allocator(VmaAllocator *allocator, VkInstance instance,
+                   VkPhysicalDevice gpu, VkDevice device);
 
 bool vk_create_instance(VkInstance *instance, RendererCreateInfo *c);
 bool vk_create_debug_messenger(VkInstance instance,
@@ -143,3 +228,13 @@ bool vk_create_device(VkInstance instance, VkPhysicalDevice gpu,
                       VkQueue *graphics_queue);
 
 bool vk_begin_command_buffer(VkCommandBuffer command);
+
+bool vk_create_shader_module(VkShaderModule *module, const uint32_t *bytes,
+                             size_t size, VkDevice device);
+
+bool vk_descriptor_pool(VkDescriptorPool *pool, VkDevice device,
+                        VkDescriptorPoolSize *sizes, uint32_t count);
+
+bool vk_descriptor_layout(VkDescriptorSetLayout *layout, VkDevice device,
+                          VkDescriptorSetLayoutBinding *bindings,
+                          uint32_t count);

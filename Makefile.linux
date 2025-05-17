@@ -1,41 +1,79 @@
 OUT = out
 SRC = src
-EXE = mordor
+EXE = civ-game
+
+SCRIPTS_DIR = scripts
+SCRIPTS_SRC := $(wildcard $(SCRIPTS_DIR)/*)
+SCRIPTS := $(patsubst $(SCRIPTS_DIR)/%.c, $(OUT)/%, $(SCRIPTS_SRC))
+
+SHADERS = shaders
+VERT := $(patsubst %.vert, $(OUT)/%_vert.h, $(wildcard $(SHADERS)/*.vert))
+FRAG := $(patsubst %.frag, $(OUT)/%_frag.h, $(wildcard $(SHADERS)/*.frag))
+COMP := $(patsubst %.comp, $(OUT)/%_comp.h, $(wildcard $(SHADERS)/*.comp))
+
+HEXEMBED := ./$(OUT)/hexembed
 
 CC = gcc
-INCLUDE = -Iexternal/SDL/include -Iexternal/volk
+CXX = g++
+INCLUDE := -Iexternal/SDL/include -Iexternal/volk -Iexternal/VulkanMemoryAllocator/include -I$(OUT)/$(SHADERS)
+LIBS = -Lout -lSDL3 -Wl,-rpath=. -lvulkan -lm
 CFLAGS := $(INCLUDE) -Wall
 
-HEADERS := $(wildcard *.h) $(wildcard $(SRC)/*.h)
+HEADERS := $(wildcard *.h) $(wildcard $(SRC)/*.h) $(wildcard $(OUT)/$(SHADERS))
 SOURCES := $(wildcard *.c) $(wildcard $(SRC)/*.c)
 
 OBJS := $(patsubst src/%.c, out/%.o, $(SOURCES))
-LIBS = -Lout -lSDL3 -Wl,-rpath=. -lvulkan
 
 .PHONY: default deps build clean run
 
 default: run
 
-deps:
-	# Build SDL
+libs: sdl vma
+sdl:
 	cmake -S external/SDL -B out/SDL
 	cmake --build out/SDL
 	cp out/SDL/libSDL3.so out/
 
-build: $(OUT)/$(EXE)
+vma: $(OUT)/vma.o
+$(OUT)/vma.o: external/VulkanMemoryAllocator/src/VmaUsage.cpp 
+	$(CXX) -Iexternal/VulkanMemoryAllocator/include -DVMA_STATIC_VULKAN_FUNCTIONS=0 -DVMA_DYANMIC_VULKAN_FUNCTIONS=0 -c $< -o $@
 
-run: $(OUT)/$(EXE)
+scripts: $(SCRIPTS)
+$(OUT)/%: $(SCRIPTS_DIR)/%.c
+	@echo "Compiling processing script $< ...."
+	@$(CC) -o $@ $<
+
+shaders: $(VERT) $(FRAG) $(COMP)
+$(OUT)/$(SHADERS)/%_vert.h: $(SHADERS)/%.vert
+	@mkdir -p $(OUT)/$(SHADERS)
+	@echo "Generating embeddable C file for $< ...."
+	glslc $< -o $(OUT)/$(SHADERS)/$*_vert.spv && $(HEXEMBED) $(OUT)/$(SHADERS)/$*_vert.spv $*_vert > $@
+
+$(OUT)/$(SHADERS)/%_frag.h: $(SHADERS)/%.frag
+	@echo "Generating embeddable C file for $< ...."
+	glslc $< -o $(OUT)/$(SHADERS)/$*_frag.spv && $(HEXEMBED) $(OUT)/$(SHADERS)/$*_frag.spv $*_frag > $@
+
+$(OUT)/$(SHADERS)/%_comp.h: $(SHADERS)/%.comp
+	@echo "Generating embeddable C file for $< ...."
+	glslc $< -o $(OUT)/$(SHADERS)/$*_comp.spv && $(HEXEMBED) $(OUT)/$(SHADERS)/$*_comp.spv $*_comp > $@
+
+
+deps: scripts shaders libs
+
+build: deps $(OUT)/$(EXE)
+
+run: build
 	cd $(OUT) && ./$(EXE)
 
 valgrind: $(OUT)/$(EXE)
 	cd $(OUT) && valgrind --leak-check=yes ./$(EXE)
 
 clean:
-	rm -rf out
+	rm -rf $(OUT)
 
 $(OUT)/%.o: $(SRC)/%.c $(HEADERS)
 	@mkdir -p $(@D)
 	$(CC) -g $(CFLAGS) -c $< -o $@
 
-$(OUT)/$(EXE): $(OBJS) deps
-	$(CC) $(OBJS) -g $(CFLAGS) $(LIBS) -o $@
+$(OUT)/$(EXE): $(OBJS) $(OUT)/vma.o
+	$(CXX) $(OBJS) $(OUT)/vma.o -g $(CFLAGS) $(LIBS) -o $@

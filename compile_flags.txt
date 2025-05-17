@@ -1,0 +1,6 @@
+-Iexternal/SDL/include 
+-Iexternal/VulkanMemoryAllocator/include
+-Iexternal/volk 
+-Iout/shaders
+-DVMA_STATIC_VULKAN_FUNCTIONS=0
+-DVMA_DYNAMIC_VULKAN_FUNCTIONS=0

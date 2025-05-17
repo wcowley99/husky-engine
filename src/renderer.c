@@ -1,11 +1,14 @@
 #include "renderer.h"
 
+#include "gradient_comp.h"
+
 #include <SDL3/SDL_vulkan.h>
 
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 
 #include <malloc.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -92,6 +95,87 @@ void image_transition(Image *image, VkCommandBuffer command,
   image->layout = layout;
 }
 
+void image_blit(VkCommandBuffer command, Image *src, Image *dst) {
+  VkImageBlit2 blit = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+      .srcOffsets = {{},
+                     {.x = src->extent.width,
+                      .y = src->extent.height,
+                      .z = src->extent.depth}},
+      .dstOffsets = {{},
+                     {.x = dst->extent.width,
+                      .y = dst->extent.height,
+                      .z = dst->extent.depth}},
+      .srcSubresource =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+              .mipLevel = 0,
+          },
+      .dstSubresource =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+              .mipLevel = 0,
+          },
+  };
+
+  VkBlitImageInfo2 blit_info = {
+      .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+      .srcImage = src->image,
+      .srcImageLayout = src->layout,
+      .dstImage = dst->image,
+      .dstImageLayout = dst->layout,
+      .filter = VK_FILTER_LINEAR,
+      .regionCount = 1,
+      .pRegions = &blit,
+  };
+
+  vkCmdBlitImage2(command, &blit_info);
+}
+
+bool allocated_image_create(VkDevice device, VmaAllocator allocator,
+                            AllocatedImageCreateInfo *info,
+                            AllocatedImage *image) {
+  VkImageCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = info->format,
+      .extent = info->extent,
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = info->usage_flags,
+  };
+
+  VmaAllocationCreateInfo alloc_info = {
+      .usage = info->memory_usage,
+      .requiredFlags = info->memory_props,
+  };
+
+  VkImage raw_image;
+  VK_EXPECT(vmaCreateImage(allocator, &create_info, &alloc_info, &raw_image,
+                           &image->allocation, NULL));
+
+  VkExtent2D extent = {
+      .width = info->extent.width,
+      .height = info->extent.height,
+  };
+  EXPECT(image_create(device, raw_image, extent, info->format,
+                      VK_IMAGE_LAYOUT_UNDEFINED, &image->image));
+
+  return true;
+}
+
+void allocated_image_destroy(AllocatedImage *image, VkDevice device,
+                             VmaAllocator allocator) {
+  image_destroy(&image->image, device);
+  vmaDestroyImage(allocator, image->image.image, image->allocation);
+}
+
 ///////////////////////////////////////
 /// FrameResources
 ///////////////////////////////////////
@@ -173,6 +257,63 @@ bool frame_resources_submit(FrameResources *f, VkQueue graphics_queue) {
   };
 
   VK_EXPECT(vkQueueSubmit2(graphics_queue, 1, &submit_info, f->render_fence));
+  return true;
+}
+
+///////////////////////////////////////
+/// Compute Pipeline
+///////////////////////////////////////
+
+bool compute_pipeline_create(ComputePipeline *p, ComputePipelineInfo *info,
+                             VkDevice device) {
+  VkPushConstantRange *ranges =
+      malloc(info->num_push_constant_sizes * sizeof(VkPushConstantRange));
+
+  for (uint32_t i = 0; i < info->num_push_constant_sizes; i += 1) {
+    ranges[i].size = info->push_constant_sizes[i];
+    ranges[i].offset = 0;
+    ranges[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+  }
+
+  VkPipelineLayoutCreateInfo layout_create_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pSetLayouts = info->descriptors,
+      .setLayoutCount = info->num_descriptors,
+      .pPushConstantRanges = ranges,
+      .pushConstantRangeCount = info->num_push_constant_sizes,
+  };
+
+  VkResult result =
+      vkCreatePipelineLayout(device, &layout_create_info, NULL, &p->layout);
+  free(ranges);
+  VK_EXPECT(result);
+
+  VkShaderModule compute;
+  EXPECT(vk_create_shader_module(&compute, info->shader_source,
+                                 info->shader_source_size, device));
+
+  VkComputePipelineCreateInfo pipeline_info = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .stage =
+          {
+              .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+              .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+              .module = compute,
+              .pName = "main",
+          },
+      .layout = p->layout,
+  };
+
+  result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info,
+                                    NULL, &p->pipeline);
+  vkDestroyShaderModule(device, compute, NULL);
+  VK_EXPECT(result);
+  return true;
+}
+
+void compute_pipeline_destroy(ComputePipeline *p, VkDevice device) {
+  vkDestroyPipelineLayout(device, p->layout, NULL);
+  vkDestroyPipeline(device, p->pipeline, NULL);
 }
 
 ///////////////////////////////////////
@@ -254,6 +395,45 @@ bool swapchain_next_frame(Swapchain *sc, VkDevice device,
 }
 
 ///////////////////////////////////////
+/// Descriptor Allocator
+///////////////////////////////////////
+
+bool descriptor_allocator_create(DescriptorAllocator *allocator,
+                                 VkDevice device) {
+  VkDescriptorPoolSize pool_sizes[] = {
+      {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1}};
+  EXPECT(vk_descriptor_pool(&allocator->pool, device, pool_sizes,
+                            sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize)));
+
+  return true;
+}
+
+void descriptor_allocator_destroy(DescriptorAllocator *allocator,
+                                  VkDevice device) {
+  vkDestroyDescriptorPool(device, allocator->pool, NULL);
+}
+
+void descriptor_allocator_clear(DescriptorAllocator *allocator,
+                                VkDevice device) {
+  vkResetDescriptorPool(device, allocator->pool, 0);
+}
+
+bool descriptor_allocator_allocate(DescriptorAllocator *allocator,
+                                   VkDevice device,
+                                   VkDescriptorSetLayout *layouts,
+                                   uint32_t count, VkDescriptorSet *sets) {
+  VkDescriptorSetAllocateInfo alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = allocator->pool,
+      .pSetLayouts = layouts,
+      .descriptorSetCount = count,
+  };
+
+  VK_EXPECT(vkAllocateDescriptorSets(device, &alloc_info, sets));
+  return true;
+}
+
+///////////////////////////////////////
 /// Renderer
 ///////////////////////////////////////
 bool renderer_init(Renderer *r, RendererCreateInfo *c) {
@@ -280,9 +460,72 @@ bool renderer_init(Renderer *r, RendererCreateInfo *c) {
   EXPECT(vk_create_device(r->instance, r->gpu, r->queue_family_index,
                           &r->device, &r->graphics_queue));
 
-  VkExtent2D extent = {c->width, c->height};
   EXPECT(swapchain_create(r->device, r->gpu, r->surface, r->queue_family_index,
                           &r->swapchain));
+
+  EXPECT(vma_allocator(&r->allocator, r->instance, r->gpu, r->device));
+
+  AllocatedImageCreateInfo allocated_image_info = {
+      .extent =
+          {
+              .width = c->width,
+              .height = c->height,
+              .depth = 1,
+          },
+      .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
+      .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                     VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                     VK_IMAGE_USAGE_STORAGE_BIT,
+  };
+
+  EXPECT(allocated_image_create(r->device, r->allocator, &allocated_image_info,
+                                &r->draw_image));
+
+  EXPECT(
+      descriptor_allocator_create(&r->global_descriptor_allocator, r->device));
+
+  VkDescriptorSetLayoutBinding bindings[] = {
+      {.binding = 0,
+       .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+       .descriptorCount = 1,
+       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
+  };
+  EXPECT(vk_descriptor_layout(&r->draw_image_descriptor_layout, r->device,
+                              bindings, sizeof(bindings) / sizeof(*bindings)));
+  EXPECT(descriptor_allocator_allocate(
+      &r->global_descriptor_allocator, r->device,
+      &r->draw_image_descriptor_layout, 1, &r->draw_image_descriptors));
+
+  VkDescriptorImageInfo image_info = {
+      .sampler = VK_NULL_HANDLE,
+      .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .imageView = r->draw_image.image.image_view,
+  };
+
+  VkWriteDescriptorSet write_set = {
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstBinding = 0,
+      .dstSet = r->draw_image_descriptors,
+      .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      .pImageInfo = &image_info,
+  };
+
+  vkUpdateDescriptorSets(r->device, 1, &write_set, 0, NULL);
+
+  ComputePipelineInfo pipeline_info = {
+      .descriptors = &r->draw_image_descriptor_layout,
+      .num_descriptors = 1,
+      .push_constant_sizes = NULL,
+      .num_push_constant_sizes = 0,
+      .shader_source = (const uint32_t *)gradient_comp_file,
+      .shader_source_size = gradient_comp_size / 4,
+  };
+  EXPECT(compute_pipeline_create(&r->gradient_pipeline, &pipeline_info,
+                                 r->device));
 
   return true;
 }
@@ -290,6 +533,15 @@ bool renderer_init(Renderer *r, RendererCreateInfo *c) {
 void renderer_shutdown(Renderer *r) {
   // Make sure the GPU has finished all work
   vkDeviceWaitIdle(r->device);
+
+  compute_pipeline_destroy(&r->gradient_pipeline, r->device);
+
+  descriptor_allocator_destroy(&r->global_descriptor_allocator, r->device);
+  vkDestroyDescriptorSetLayout(r->device, r->draw_image_descriptor_layout,
+                               NULL);
+
+  allocated_image_destroy(&r->draw_image, r->device, r->allocator);
+  vmaDestroyAllocator(r->allocator);
 
   swapchain_destroy(&r->swapchain, r->device);
 
@@ -308,6 +560,8 @@ void renderer_draw(Renderer *r) {
   Image *image;
   uint32_t image_index;
 
+  Image *draw_image = &r->draw_image.image;
+
   if (!swapchain_next_frame(&r->swapchain, r->device, &frame, &image,
                             &image_index)) {
     vkDeviceWaitIdle(r->device);
@@ -323,7 +577,7 @@ void renderer_draw(Renderer *r) {
 
   vk_begin_command_buffer(frame->command);
 
-  image_transition(image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
+  image_transition(draw_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
   VkClearColorValue color = {{0.0f, 1.0f, 0.0f, 1.0f}};
   VkImageSubresourceRange range = {
       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -332,8 +586,25 @@ void renderer_draw(Renderer *r) {
       .baseArrayLayer = 0,
       .layerCount = VK_REMAINING_ARRAY_LAYERS,
   };
-  vkCmdClearColorImage(frame->command, image->image, image->layout, &color, 1,
-                       &range);
+  vkCmdClearColorImage(frame->command, draw_image->image, draw_image->layout,
+                       &color, 1, &range);
+
+  image_transition(draw_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
+  vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                    r->gradient_pipeline.pipeline);
+
+  vkCmdBindDescriptorSets(frame->command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          r->gradient_pipeline.layout, 0, 1,
+                          &r->draw_image_descriptors, 0, NULL);
+
+  vkCmdDispatch(frame->command, ceilf(draw_image->extent.width / 16.0f),
+                ceilf(draw_image->extent.height / 16.0f), 1);
+
+  image_transition(draw_image, frame->command,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+  image_transition(image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  image_blit(frame->command, draw_image, image);
 
   image_transition(image, frame->command, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
@@ -374,6 +645,26 @@ void vk_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *info) {
                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   info->pfnUserCallback = vk_validation_callback;
+}
+
+bool vma_allocator(VmaAllocator *allocator, VkInstance instance,
+                   VkPhysicalDevice gpu, VkDevice device) {
+  VmaVulkanFunctions functions = {
+      .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+      .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+  };
+
+  VmaAllocatorCreateInfo create_info = {
+      .physicalDevice = gpu,
+      .instance = instance,
+      .device = device,
+      .vulkanApiVersion = VK_API_VERSION_1_3,
+      .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+      .pVulkanFunctions = &functions,
+  };
+
+  VK_EXPECT(vmaCreateAllocator(&create_info, allocator));
+  return true;
 }
 
 bool vk_create_instance(VkInstance *instance, RendererCreateInfo *c) {
@@ -556,5 +847,48 @@ bool vk_begin_command_buffer(VkCommandBuffer command) {
   VK_EXPECT(vkResetCommandBuffer(command, 0));
   VK_EXPECT(vkBeginCommandBuffer(command, &info));
 
+  return true;
+}
+
+bool vk_create_shader_module(VkShaderModule *module, const uint32_t *bytes,
+                             size_t len, VkDevice device) {
+  VkShaderModuleCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .pCode = bytes,
+      .codeSize = len * sizeof(uint32_t),
+  };
+
+  VK_EXPECT(vkCreateShaderModule(device, &create_info, NULL, module));
+  return true;
+}
+
+bool vk_descriptor_pool(VkDescriptorPool *pool, VkDevice device,
+                        VkDescriptorPoolSize *sizes, uint32_t count) {
+  uint32_t sum = 0;
+  for (uint32_t i = 0; i < count; i += 1) {
+    sum += sizes[i].descriptorCount;
+  }
+
+  VkDescriptorPoolCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .pPoolSizes = sizes,
+      .poolSizeCount = count,
+      .maxSets = sum,
+  };
+
+  VK_EXPECT(vkCreateDescriptorPool(device, &create_info, NULL, pool));
+  return true;
+}
+
+bool vk_descriptor_layout(VkDescriptorSetLayout *layout, VkDevice device,
+                          VkDescriptorSetLayoutBinding *bindings,
+                          uint32_t count) {
+  VkDescriptorSetLayoutCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .pBindings = bindings,
+      .bindingCount = count,
+  };
+
+  VK_EXPECT(vkCreateDescriptorSetLayout(device, &create_info, NULL, layout));
   return true;
 }
