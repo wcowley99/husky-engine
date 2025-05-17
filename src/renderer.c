@@ -1,6 +1,7 @@
 #include "renderer.h"
 
 #include "colored_triangle_frag.h"
+#include "colored_triangle_mesh_vert.h"
 #include "colored_triangle_vert.h"
 #include "gradient2_comp.h"
 #include "gradient_comp.h"
@@ -69,6 +70,7 @@ bool mesh_buffer_create(VmaAllocator allocator, VkDevice device, VkQueue queue,
       .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
       .buffer = buffer->vertex.buffer,
   };
+  vkGetBufferDeviceAddress(device, &address_info);
 
   Buffer staging_buffer;
   buffer_create(allocator, vertex_size + index_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -634,7 +636,7 @@ bool immediate_command_create(VkDevice device, uint32_t queue_family_index,
                               ImmediateCommand *command) {
   VkFenceCreateInfo fence_info = {
       .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-      .flags = {},
+      .flags = 0,
   };
   VK_EXPECT(vkCreateFence(device, &fence_info, NULL, &command->fence));
 
@@ -798,6 +800,27 @@ bool renderer_init(Renderer *r, RendererCreateInfo *c) {
   };
   EXPECT(graphics_pipeline_create(r->device, &graphics_pipeline_info, &r->triangle_pipeline));
 
+  VkPushConstantRange push_constants[] = {
+      {.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(MeshPushConstant)},
+  };
+  GraphicsPipelineCreateInfo mesh_pipeline_info = {
+      .descriptors = &r->draw_image_descriptor_layout,
+      .num_descriptors = 1,
+      .push_constants = push_constants,
+      .num_push_constants = 1,
+      .vertex_shader = (const uint32_t *)colored_triangle_mesh_vert_file,
+      .vertex_shader_size = colored_triangle_mesh_vert_size / 4,
+      .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
+      .fragment_shader_size = colored_triangle_frag_size / 4,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      .polygon_mode = VK_POLYGON_MODE_FILL,
+      .cull_mode = VK_CULL_MODE_NONE,
+      .front_face = VK_FRONT_FACE_CLOCKWISE,
+      .color_attachment_format = r->draw_image.image.format,
+      .depth_attachment_format = VK_FORMAT_UNDEFINED,
+  };
+  EXPECT(graphics_pipeline_create(r->device, &mesh_pipeline_info, &r->mesh_pipeline));
+
   return true;
 }
 
@@ -809,6 +832,7 @@ void renderer_shutdown(Renderer *r) {
 
   compute_pipeline_destroy(&r->gradient_pipeline, r->device);
   graphics_pipeline_destroy(&r->triangle_pipeline, r->device);
+  graphics_pipeline_destroy(&r->mesh_pipeline, r->device);
 
   descriptor_allocator_destroy(&r->global_descriptor_allocator, r->device);
   vkDestroyDescriptorSetLayout(r->device, r->draw_image_descriptor_layout, NULL);
@@ -917,6 +941,18 @@ void renderer_draw(Renderer *r) {
 
   vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, r->triangle_pipeline.pipeline);
   vkCmdDraw(frame->command, 3, 1, 0, 0);
+
+  // mesh pipeline
+  vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, r->mesh_pipeline.pipeline);
+
+  MeshPushConstant data = {
+      .world_matrix = GLM_MAT4_IDENTITY_INIT,
+      .device_address = r->mesh.vertex_address,
+  };
+  vkCmdPushConstants(frame->command, r->mesh_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                     sizeof(MeshPushConstant), &data);
+  vkCmdBindIndexBuffer(frame->command, r->mesh.index.buffer, 0, VK_INDEX_TYPE_UINT32);
+  vkCmdDrawIndexed(frame->command, 6, 1, 0, 0, 0);
 
   vkCmdEndRendering(frame->command);
 

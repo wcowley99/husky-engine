@@ -96,6 +96,11 @@ typedef struct {
   VkDeviceAddress vertex_address;
 } MeshBuffer;
 
+typedef struct {
+  mat4 world_matrix;
+  VkDeviceAddress device_address;
+} MeshPushConstant;
+
 bool mesh_buffer_create(VmaAllocator allocator, VkDevice device, VkQueue queue,
                         ImmediateCommand *immediate, Mesh *mesh, MeshBuffer *buffer);
 
@@ -289,6 +294,7 @@ typedef struct {
 
   ComputePipeline gradient_pipeline;
   GraphicsPipeline triangle_pipeline;
+  GraphicsPipeline mesh_pipeline;
 
   MeshBuffer mesh;
 } Renderer;
