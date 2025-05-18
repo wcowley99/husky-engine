@@ -24,7 +24,7 @@ SOURCES := $(wildcard *.c) $(wildcard $(SRC)/*.c)
 
 OBJS := $(patsubst src/%.c, out/%.o, $(SOURCES))
 
-.PHONY: default deps build clean run
+.PHONY: default deps build clean run scripts shaders
 
 default: run
 
