@@ -1,6 +1,6 @@
 ---
 Language:        Cpp
-AccessModifierOffset: -2
+AccessModifierOffset: -8
 # AlignAfterOpenBracket: Align
 # AlignArrayOfStructures: None
 # AlignConsecutiveAssignments:
@@ -82,13 +82,13 @@ AccessModifierOffset: -2
 # BinPackArguments: true
 # BinPackParameters: true
 # BitFieldColonSpacing: Both
-# BraceWrapping:
+BraceWrapping:
 #   AfterCaseLabel:  false
 #   AfterClass:      false
 #   AfterControlStatement: Never
 #   AfterEnum:       false
 #   AfterExternBlock: false
-#   AfterFunction:   false
+    AfterFunction:   true
 #   AfterNamespace:  false
 #   AfterObjCDeclaration: false
 #   AfterStruct:     false
@@ -157,7 +157,7 @@ ColumnLimit:     100
 # IndentGotoLabels: true
 # IndentPPDirectives: None
 # IndentRequiresClause: true
-# IndentWidth:     2
+IndentWidth:     8
 # IndentWrappedFunctionNames: false
 # InsertBraces:    false
 # InsertNewlineAtEOF: false
