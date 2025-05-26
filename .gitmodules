@@ -1,6 +1,3 @@
-[submodule "external/tinygltf"]
-	path = external/tinygltf
-	url = git@github.com:syoyo/tinygltf.git
 [submodule "external/SDL"]
 	path = external/SDL
 	url = git@github.com:libsdl-org/SDL.git
@@ -13,6 +10,3 @@
 [submodule "external/VulkanMemoryAllocator"]
 	path = external/VulkanMemoryAllocator
 	url = git@github.com:GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-[submodule "external/cglm"]
-	path = external/cglm
-	url = git@github.com:recp/cglm.git

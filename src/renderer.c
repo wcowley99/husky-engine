@@ -43,6 +43,81 @@ ComputePipeline g_GradientPipeline;
 GraphicsPipeline g_TrianglePipeline;
 GraphicsPipeline g_MeshPipeline;
 
+MeshBuffer g_RectangleMesh;
+
+bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
+        VkBufferCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = size,
+            .usage = flags,
+        };
+
+        VmaAllocationCreateInfo alloc_info = {
+            .usage = usage,
+            .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        };
+
+        VkResult result = vmaCreateBuffer(g_Allocator, &create_info, &alloc_info, &buffer->buffer,
+                                          &buffer->allocation, &buffer->info);
+
+        if (result != VK_SUCCESS) {
+                printf("Failed to create buffer.\n");
+                return false;
+        } else {
+                return true;
+        }
+}
+
+void buffer_destroy(Buffer *buffer) {
+        vmaDestroyBuffer(g_Allocator, buffer->buffer, buffer->allocation);
+}
+
+bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
+        const size_t vertex_buffer_size = sizeof(Vertex) * mesh->num_vertices;
+        const size_t index_buffer_size = sizeof(uint32_t) * mesh->num_indices;
+
+        buffer_create(vertex_buffer_size,
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      VMA_MEMORY_USAGE_GPU_ONLY, &buffer->vertex);
+        buffer_create(index_buffer_size,
+                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VMA_MEMORY_USAGE_GPU_ONLY, &buffer->index);
+
+        VkBufferDeviceAddressInfo address_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            .buffer = buffer->vertex.buffer,
+        };
+        buffer->vertex_address = vkGetBufferDeviceAddress(g_Device, &address_info);
+
+        Buffer staging_buffer;
+        buffer_create(vertex_buffer_size + index_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
+        vmaCopyMemoryToAllocation(g_Allocator, mesh->vertices, staging_buffer.allocation, 0,
+                                  vertex_buffer_size);
+        vmaCopyMemoryToAllocation(g_Allocator, mesh->indices, staging_buffer.allocation,
+                                  vertex_buffer_size, index_buffer_size);
+
+        VkCommandBuffer cmd = g_ImmediateCommand.command;
+        immediate_command_begin(&g_ImmediateCommand);
+
+        VkBufferCopy vertex_copy = {.size = vertex_buffer_size};
+        VkBufferCopy index_copy = {.size = index_buffer_size, .srcOffset = vertex_buffer_size};
+
+        vkCmdCopyBuffer(cmd, staging_buffer.buffer, buffer->vertex.buffer, 1, &vertex_copy);
+        vkCmdCopyBuffer(cmd, staging_buffer.buffer, buffer->index.buffer, 1, &index_copy);
+
+        immediate_command_end(&g_ImmediateCommand);
+
+        buffer_destroy(&staging_buffer);
+        return true;
+}
+
+void mesh_buffer_destroy(MeshBuffer *buffer) {
+        buffer_destroy(&buffer->vertex);
+        buffer_destroy(&buffer->index);
+}
+
 ///////////////////////////////////////
 /// Image
 ///////////////////////////////////////
@@ -304,7 +379,7 @@ bool compute_pipeline_create(ComputePipelineInfo *info, ComputePipeline *p) {
         VK_EXPECT(result);
 
         VkShaderModule compute;
-        EXPECT(vk_create_shader_module(&compute, info->shader_source, info->shader_source_size));
+        EXPECT(create_shader_module(info->shader_source, info->shader_source_size, &compute));
 
         VkComputePipelineCreateInfo pipeline_info = {
             .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
@@ -405,10 +480,10 @@ bool graphics_pipeline_create(GraphicsPipelineCreateInfo *create_info, GraphicsP
 
         VkShaderModule vertex;
         VkShaderModule fragment;
-        EXPECT(vk_create_shader_module(&vertex, create_info->vertex_shader,
-                                       create_info->vertex_shader_size));
-        EXPECT(vk_create_shader_module(&fragment, create_info->fragment_shader,
-                                       create_info->fragment_shader_size));
+        EXPECT(create_shader_module(create_info->vertex_shader, create_info->vertex_shader_size,
+                                    &vertex));
+        EXPECT(create_shader_module(create_info->fragment_shader, create_info->fragment_shader_size,
+                                    &fragment));
 
         VkPipelineShaderStageCreateInfo shaders[] = {
             {
@@ -544,8 +619,8 @@ bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image
 bool descriptor_allocator_create(DescriptorAllocator *allocator) {
         VkDescriptorPoolSize pool_sizes[] = {
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1}};
-        EXPECT(vk_descriptor_pool(&allocator->pool, pool_sizes,
-                                  sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize)));
+        EXPECT(create_descriptor_pool(pool_sizes, sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize),
+                                      &allocator->pool));
 
         return true;
 }
@@ -651,16 +726,16 @@ bool RendererInit(RendererCreateInfo *c) {
                 return false;
         }
 
-        EXPECT(vk_create_instance(c));
-        EXPECT(vk_create_debug_messenger());
-        EXPECT(vk_create_surface());
+        EXPECT(create_instance(c));
+        EXPECT(create_debug_messenger());
+        EXPECT(create_surface());
 
-        EXPECT(vk_select_gpu());
-        EXPECT(vk_create_device());
+        EXPECT(select_gpu());
+        EXPECT(create_device());
 
         EXPECT(swapchain_create());
 
-        EXPECT(vma_allocator());
+        EXPECT(create_vma_allocator());
 
         EXPECT(immediate_command_create(&g_ImmediateCommand));
 
@@ -688,8 +763,8 @@ bool RendererInit(RendererCreateInfo *c) {
              .descriptorCount = 1,
              .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
         };
-        EXPECT(vk_descriptor_layout(&g_IntermediateImageDescriptorLayout, bindings,
-                                    sizeof(bindings) / sizeof(*bindings)));
+        EXPECT(create_descriptor_layout(bindings, sizeof(bindings) / sizeof(*bindings),
+                                        &g_IntermediateImageDescriptorLayout));
         EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator,
                                              &g_IntermediateImageDescriptorLayout, 1,
                                              &g_IntermediateImageDescriptors));
@@ -737,7 +812,11 @@ bool RendererInit(RendererCreateInfo *c) {
         EXPECT(graphics_pipeline_create(&graphics_pipeline_info, &g_TrianglePipeline));
 
         VkPushConstantRange push_constants[] = {
-            {.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = 64},
+            {
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                .offset = 0,
+                .size = sizeof(MeshPushConstants),
+            },
         };
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
             .push_constants = push_constants,
@@ -755,6 +834,21 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
+        Vertex vertices[4] = {
+            {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
+            {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
+        };
+        uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
+        Mesh rectangle = {
+            .vertices = vertices,
+            .num_vertices = 4,
+            .indices = indices,
+            .num_indices = 6,
+        };
+        mesh_buffer_create(&rectangle, &g_RectangleMesh);
+
         return true;
 }
 
@@ -770,6 +864,7 @@ void RendererShutdown() {
         vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
 
         allocated_image_destroy(&g_IntermediateImage);
+        mesh_buffer_destroy(&g_RectangleMesh);
 
         vmaDestroyAllocator(g_Allocator);
         immediate_command_destroy(&g_ImmediateCommand);
@@ -804,7 +899,7 @@ void RendererDraw() {
 
         vkResetFences(g_Device, 1, &frame->render_fence);
 
-        vk_begin_command_buffer(frame->command);
+        begin_command_buffer(frame->command);
 
         image_transition(intermediate_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
         VkClearColorValue color = {{0.0f, 1.0f, 0.0f, 1.0f}};
@@ -828,8 +923,8 @@ void RendererDraw() {
                                 NULL);
 
         struct {
-                vec4 bottom;
-                vec4 top;
+                float bottom[4];
+                float top[4];
                 float padding[8];
         } pc = {
             .bottom = {1.0f, 0.0f, 0.0f, 1.0f},
@@ -881,6 +976,18 @@ void RendererDraw() {
 
         vkCmdDraw(frame->command, 3, 1, 0, 0);
 
+        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, g_MeshPipeline.pipeline);
+
+        MeshPushConstants push_constants = {
+            .matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+            .vertex_address = g_RectangleMesh.vertex_address,
+        };
+        vkCmdPushConstants(frame->command, g_MeshPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(MeshPushConstants), &push_constants);
+        vkCmdBindIndexBuffer(frame->command, g_RectangleMesh.index.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(frame->command, 6, 1, 0, 0, 0);
+
         vkCmdEndRendering(frame->command);
 
         image_transition(intermediate_image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -908,27 +1015,16 @@ void RendererDraw() {
         SDL_UpdateWindowSurface(g_Window);
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL
-vk_validation_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                       VkDebugUtilsMessageTypeFlagsEXT messageType,
-                       const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
         printf("[Validation]: %s\n", pCallbackData->pMessage);
 
         return VK_FALSE;
 }
 
-void vk_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *info) {
-        info->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        info->messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        info->messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        info->pfnUserCallback = vk_validation_callback;
-}
-
-bool vma_allocator() {
+bool create_vma_allocator() {
         VmaVulkanFunctions functions = {
             .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
             .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
@@ -947,7 +1043,7 @@ bool vma_allocator() {
         return true;
 }
 
-bool vk_create_instance(RendererCreateInfo *c) {
+bool create_instance(RendererCreateInfo *c) {
         VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                       .pApplicationName = c->title,
                                       .applicationVersion = VK_MAKE_VERSION(1, 3, 0),
@@ -955,8 +1051,16 @@ bool vk_create_instance(RendererCreateInfo *c) {
                                       .engineVersion = VK_MAKE_VERSION(1, 0, 0),
                                       .apiVersion = VK_API_VERSION_1_3};
 
-        VkDebugUtilsMessengerCreateInfoEXT validation_callback = {0};
-        vk_debug_messenger_create_info(&validation_callback);
+        VkDebugUtilsMessengerCreateInfoEXT validation_callback = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = validation_message_callback,
+        };
 
         uint32_t count = 0;
         const char *const *sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&count);
@@ -989,16 +1093,24 @@ bool vk_create_instance(RendererCreateInfo *c) {
         return true;
 }
 
-bool vk_create_debug_messenger() {
-        VkDebugUtilsMessengerCreateInfoEXT create_info = {0};
-        vk_debug_messenger_create_info(&create_info);
+bool create_debug_messenger() {
+        VkDebugUtilsMessengerCreateInfoEXT create_info = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = validation_message_callback,
+        };
 
         VK_EXPECT(
             vkCreateDebugUtilsMessengerEXT(g_Instance, &create_info, NULL, &g_DebugMessenger));
         return true;
 }
 
-bool vk_create_surface() {
+bool create_surface() {
         if (!SDL_Vulkan_CreateSurface(g_Window, g_Instance, NULL, &g_Surface)) {
                 printf("SDL failed to create window: %s.\n", SDL_GetError());
                 return false;
@@ -1007,7 +1119,7 @@ bool vk_create_surface() {
         return true;
 }
 
-bool vk_gpu_suitable(VkPhysicalDevice gpu) {
+bool is_gpu_suitable(VkPhysicalDevice gpu) {
         VkPhysicalDeviceProperties p;
         VkPhysicalDeviceVulkan12Features f12 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -1048,7 +1160,7 @@ bool vk_gpu_suitable(VkPhysicalDevice gpu) {
         return true;
 }
 
-bool vk_select_gpu() {
+bool select_gpu() {
         uint32_t count = 0;
         vkEnumeratePhysicalDevices(g_Instance, &count, NULL);
 
@@ -1061,7 +1173,7 @@ bool vk_select_gpu() {
         vkEnumeratePhysicalDevices(g_Instance, &count, gpus);
 
         for (uint32_t i = 0; i < count; i += 1) {
-                if (vk_gpu_suitable(gpus[i])) {
+                if (is_gpu_suitable(gpus[i])) {
                         g_PhysicalDevice = gpus[i];
                         break;
                 }
@@ -1071,7 +1183,7 @@ bool vk_select_gpu() {
         return true;
 }
 
-bool vk_create_device() {
+bool create_device() {
         float priorities[] = {1.0f};
         VkDeviceQueueCreateInfo queue_info = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1113,7 +1225,7 @@ bool vk_create_device() {
         return true;
 }
 
-bool vk_begin_command_buffer(VkCommandBuffer command) {
+bool begin_command_buffer(VkCommandBuffer command) {
         VkCommandBufferBeginInfo info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -1125,7 +1237,7 @@ bool vk_begin_command_buffer(VkCommandBuffer command) {
         return true;
 }
 
-bool vk_create_shader_module(VkShaderModule *module, const uint32_t *bytes, size_t len) {
+bool create_shader_module(const uint32_t *bytes, size_t len, VkShaderModule *module) {
         VkShaderModuleCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .pCode = bytes,
@@ -1136,7 +1248,7 @@ bool vk_create_shader_module(VkShaderModule *module, const uint32_t *bytes, size
         return true;
 }
 
-bool vk_descriptor_pool(VkDescriptorPool *pool, VkDescriptorPoolSize *sizes, uint32_t count) {
+bool create_descriptor_pool(VkDescriptorPoolSize *sizes, uint32_t count, VkDescriptorPool *pool) {
         uint32_t sum = 0;
         for (uint32_t i = 0; i < count; i += 1) {
                 sum += sizes[i].descriptorCount;
@@ -1153,8 +1265,8 @@ bool vk_descriptor_pool(VkDescriptorPool *pool, VkDescriptorPoolSize *sizes, uin
         return true;
 }
 
-bool vk_descriptor_layout(VkDescriptorSetLayout *layout, VkDescriptorSetLayoutBinding *bindings,
-                          uint32_t count) {
+bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
+                              VkDescriptorSetLayout *layout) {
         VkDescriptorSetLayoutCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             .pBindings = bindings,

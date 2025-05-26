@@ -14,35 +14,74 @@
 #include <stdint.h>
 
 #define EXPECT(x)                                                                                  \
-  do {                                                                                             \
-    if (!(x)) {                                                                                    \
-      printf("[%s:%d] EXPECT failed: %s\n", __FILE__, __LINE__, #x);                               \
-      return false;                                                                                \
-    }                                                                                              \
-  } while (false)
+        do {                                                                                       \
+                if (!(x)) {                                                                        \
+                        printf("[%s:%d] EXPECT failed: %s\n", __FILE__, __LINE__, #x);             \
+                        return false;                                                              \
+                }                                                                                  \
+        } while (false)
 
 #define VK_EXPECT(x)                                                                               \
-  do {                                                                                             \
-    VkResult err = x;                                                                              \
-    if (err != VK_SUCCESS) {                                                                       \
-      printf("[%s:%d] VK_EXPECT failed: %s\n", __FILE__, __LINE__, string_VkResult(err));          \
-      return false;                                                                                \
-    }                                                                                              \
-  } while (false)
+        do {                                                                                       \
+                VkResult err = x;                                                                  \
+                if (err != VK_SUCCESS) {                                                           \
+                        printf("[%s:%d] VK_EXPECT failed: %s\n", __FILE__, __LINE__,               \
+                               string_VkResult(err));                                              \
+                        return false;                                                              \
+                }                                                                                  \
+        } while (false)
 
-VKAPI_ATTR VkBool32 VKAPI_CALL
-vk_validation_callback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                       VkDebugUtilsMessageTypeFlagsEXT messageType,
-                       const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
+
+typedef struct {
+        VkBuffer buffer;
+        VmaAllocation allocation;
+        VmaAllocationInfo info;
+} Buffer;
+
+bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
+void buffer_destroy(Buffer *buffer);
+
+typedef struct {
+        float position[3];
+        float uv_x;
+        float normal[3];
+        float uv_y;
+        float color[4];
+} Vertex;
+
+typedef struct {
+        Vertex *vertices;
+        uint32_t *indices;
+        uint32_t num_vertices;
+        uint32_t num_indices;
+} Mesh;
+
+typedef struct {
+        float matrix[16];
+        VkDeviceAddress vertex_address;
+} MeshPushConstants;
+
+typedef struct {
+        Buffer vertex;
+        Buffer index;
+        VkDeviceAddress vertex_address;
+} MeshBuffer;
+
+bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer);
+void mesh_buffer_destroy(MeshBuffer *buffer);
 
 ///////////////////////////////////////
 /// Immediate Command
 ///////////////////////////////////////
 
 typedef struct {
-  VkCommandPool pool;
-  VkCommandBuffer command;
-  VkFence fence;
+        VkCommandPool pool;
+        VkCommandBuffer command;
+        VkFence fence;
 } ImmediateCommand;
 
 bool immediate_command_create(ImmediateCommand *command);
@@ -56,11 +95,11 @@ void immediate_command_end(ImmediateCommand *command);
 /// Image
 ///////////////////////////////////////
 typedef struct {
-  VkImage image;
-  VkImageView image_view;
-  VkExtent3D extent;
-  VkFormat format;
-  VkImageLayout layout;
+        VkImage image;
+        VkImageView image_view;
+        VkExtent3D extent;
+        VkFormat format;
+        VkImageLayout layout;
 } Image;
 
 bool image_create(VkImage vk_image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
@@ -73,16 +112,16 @@ void image_transition(Image *image, VkCommandBuffer command, VkImageLayout layou
 void image_blit(VkCommandBuffer command, Image *src, Image *dst);
 
 typedef struct {
-  VkExtent3D extent;
-  VkFormat format;
-  VkImageUsageFlags usage_flags;
-  VmaMemoryUsage memory_usage;
-  VkMemoryPropertyFlags memory_props;
+        VkExtent3D extent;
+        VkFormat format;
+        VkImageUsageFlags usage_flags;
+        VmaMemoryUsage memory_usage;
+        VkMemoryPropertyFlags memory_props;
 } AllocatedImageCreateInfo;
 
 typedef struct {
-  Image image;
-  VmaAllocation allocation;
+        Image image;
+        VmaAllocation allocation;
 } AllocatedImage;
 
 bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image);
@@ -93,11 +132,11 @@ void allocated_image_destroy(AllocatedImage *image);
 /// FrameResources
 ///////////////////////////////////////
 typedef struct {
-  VkCommandPool pool;
-  VkCommandBuffer command;
-  VkSemaphore swapchain_semaphore;
-  VkSemaphore render_semaphore;
-  VkFence render_fence;
+        VkCommandPool pool;
+        VkCommandBuffer command;
+        VkSemaphore swapchain_semaphore;
+        VkSemaphore render_semaphore;
+        VkFence render_fence;
 } FrameResources;
 
 bool frame_resources_create(FrameResources *f);
@@ -111,19 +150,19 @@ bool frame_resources_submit(FrameResources *f);
 ///////////////////////////////////////
 
 typedef struct {
-  VkDescriptorSetLayout *descriptors;
-  uint32_t num_descriptors;
+        VkDescriptorSetLayout *descriptors;
+        uint32_t num_descriptors;
 
-  const uint32_t *push_constant_sizes;
-  uint32_t num_push_constant_sizes;
+        const uint32_t *push_constant_sizes;
+        uint32_t num_push_constant_sizes;
 
-  const uint32_t *shader_source;
-  uint32_t shader_source_size;
+        const uint32_t *shader_source;
+        uint32_t shader_source_size;
 } ComputePipelineInfo;
 
 typedef struct {
-  VkPipeline pipeline;
-  VkPipelineLayout layout;
+        VkPipeline pipeline;
+        VkPipelineLayout layout;
 } ComputePipeline;
 
 bool compute_pipeline_create(ComputePipelineInfo *info, ComputePipeline *p);
@@ -135,29 +174,29 @@ void compute_pipeline_destroy(ComputePipeline *p);
 ///////////////////////////////////////
 
 typedef struct {
-  VkDescriptorSetLayout *descriptors;
-  uint32_t num_descriptors;
+        VkDescriptorSetLayout *descriptors;
+        uint32_t num_descriptors;
 
-  const VkPushConstantRange *push_constants;
-  uint32_t num_push_constants;
+        const VkPushConstantRange *push_constants;
+        uint32_t num_push_constants;
 
-  VkPrimitiveTopology topology;
-  VkPolygonMode polygon_mode;
-  VkCullModeFlagBits cull_mode;
-  VkFrontFace front_face;
-  VkFormat color_attachment_format;
-  VkFormat depth_attachment_format;
+        VkPrimitiveTopology topology;
+        VkPolygonMode polygon_mode;
+        VkCullModeFlagBits cull_mode;
+        VkFrontFace front_face;
+        VkFormat color_attachment_format;
+        VkFormat depth_attachment_format;
 
-  const uint32_t *vertex_shader;
-  uint32_t vertex_shader_size;
+        const uint32_t *vertex_shader;
+        uint32_t vertex_shader_size;
 
-  const uint32_t *fragment_shader;
-  uint32_t fragment_shader_size;
+        const uint32_t *fragment_shader;
+        uint32_t fragment_shader_size;
 } GraphicsPipelineCreateInfo;
 
 typedef struct {
-  VkPipeline pipeline;
-  VkPipelineLayout layout;
+        VkPipeline pipeline;
+        VkPipelineLayout layout;
 } GraphicsPipeline;
 
 bool graphics_pipeline_create(GraphicsPipelineCreateInfo *create_info, GraphicsPipeline *pipeline);
@@ -169,12 +208,12 @@ void graphics_pipeline_destroy(GraphicsPipeline *pipeline);
 ///////////////////////////////////////
 
 typedef struct {
-  VkSwapchainKHR swapchain;
-  VkFormat format;
-  uint32_t image_count;
-  uint32_t frame_index;
-  Image *images;
-  FrameResources *frames;
+        VkSwapchainKHR swapchain;
+        VkFormat format;
+        uint32_t image_count;
+        uint32_t frame_index;
+        Image *images;
+        FrameResources *frames;
 } Swapchain;
 
 bool swapchain_create();
@@ -188,7 +227,7 @@ bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image
 ///////////////////////////////////////
 
 typedef struct {
-  VkDescriptorPool pool;
+        VkDescriptorPool pool;
 } DescriptorAllocator;
 
 bool descriptor_allocator_create(DescriptorAllocator *allocator);
@@ -205,10 +244,10 @@ bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDescriptorS
 ///////////////////////////////////////
 
 typedef struct {
-  uint32_t width;
-  uint32_t height;
-  const char *title;
-  bool debug;
+        uint32_t width;
+        uint32_t height;
+        const char *title;
+        bool debug;
 } RendererCreateInfo;
 
 // Renderer Core Functions
@@ -220,24 +259,22 @@ void RendererDraw();
 
 // Vulkan Initialization Functions
 
-void vk_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT *info);
+bool create_vma_allocator();
 
-bool vma_allocator();
+bool create_instance(RendererCreateInfo *c);
+bool create_debug_messenger();
+bool create_surface();
 
-bool vk_create_instance(RendererCreateInfo *c);
-bool vk_create_debug_messenger();
-bool vk_create_surface();
+bool is_gpu_suitable(VkPhysicalDevice gpu);
+bool select_gpu();
 
-bool vk_gpu_suitable(VkPhysicalDevice gpu);
-bool vk_select_gpu();
+bool create_device();
 
-bool vk_create_device();
+bool begin_command_buffer(VkCommandBuffer command);
 
-bool vk_begin_command_buffer(VkCommandBuffer command);
+bool create_shader_module(const uint32_t *bytes, size_t size, VkShaderModule *module);
 
-bool vk_create_shader_module(VkShaderModule *module, const uint32_t *bytes, size_t size);
+bool create_descriptor_pool(VkDescriptorPoolSize *sizes, uint32_t count, VkDescriptorPool *pool);
 
-bool vk_descriptor_pool(VkDescriptorPool *pool, VkDescriptorPoolSize *sizes, uint32_t count);
-
-bool vk_descriptor_layout(VkDescriptorSetLayout *layout, VkDescriptorSetLayoutBinding *bindings,
-                          uint32_t count);
+bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
+                              VkDescriptorSetLayout *layout);
