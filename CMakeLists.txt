@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 
 project(
   civ-game
@@ -41,7 +41,6 @@ add_custom_target(generated_headers ALL
 # Build Source
 find_package(Vulkan REQUIRED)
 
-add_subdirectory(external/cglm EXCLUDE_FROM_ALL)
 add_subdirectory(external/SDL)
 add_subdirectory(external/volk)
 
@@ -62,27 +61,35 @@ target_compile_definitions(VulkanMemoryAllocator PUBLIC
   VMA_DYANMIC_VULKAN_FUNCTIONS=0
 )
 
-add_executable(civ-game
-  src/main.c
+add_library(engine-lib
   src/renderer.c
   src/renderer.h
+  src/linalgebra.c
+  src/linalgebra.h
   ${SHADER_HEADERS}
 )
 
-add_dependencies(civ-game generated_headers)
+add_dependencies(engine-lib generated_headers)
 
-target_link_libraries(civ-game PRIVATE
+target_link_libraries(engine-lib PUBLIC
   SDL3::SDL3
   Vulkan::Headers
   VulkanMemoryAllocator
-  cglm_headers
   volk
 )
 
-target_include_directories(civ-game PRIVATE
+target_include_directories(engine-lib PUBLIC
   external/SDL/include
   external/VulkanMemoryAllocator/include
-  external/cglm/include
   external/volk
   ${CMAKE_BINARY_DIR}
 )
+
+# Build main
+add_executable(civ-game src/main.c)
+target_link_libraries(civ-game engine-lib)
+
+# Build Test
+add_executable(test test/test.c)
+target_link_libraries(test engine-lib)
+target_include_directories(test PRIVATE ${CMAKE_SOURCE_DIR})

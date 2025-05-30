@@ -35,6 +35,8 @@ ImmediateCommand g_ImmediateCommand;
 
 DescriptorAllocator g_DescriptorAllocator;
 
+VkDescriptorSetLayout g_GlobalDescriptorLayout;
+
 AllocatedImage g_IntermediateImage;
 VkDescriptorSetLayout g_IntermediateImageDescriptorLayout;
 VkDescriptorSet g_IntermediateImageDescriptors;
@@ -44,6 +46,13 @@ GraphicsPipeline g_TrianglePipeline;
 GraphicsPipeline g_MeshPipeline;
 
 MeshBuffer g_RectangleMesh;
+
+vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
+vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
+const vec3 g_UpVector = {0.0f, 1.0f, 0.0f};
+
+uint32_t g_Width;
+uint32_t g_Height;
 
 bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
         VkBufferCreateInfo create_info = {
@@ -304,6 +313,29 @@ bool frame_resources_create(FrameResources *f) {
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
 
+        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout, 1,
+                                             &f->global_descriptors));
+
+        EXPECT(buffer_create(sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                             VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
+
+        VkDescriptorBufferInfo camera_info = {
+            .buffer = f->camera_uniform.buffer,
+            .offset = 0,
+            .range = sizeof(CameraData),
+        };
+
+        VkWriteDescriptorSet write_set = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .dstSet = f->global_descriptors,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &camera_info,
+        };
+
+        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+
         return true;
 }
 
@@ -314,6 +346,8 @@ void frame_resources_destroy(FrameResources *f) {
         vkDestroyFence(g_Device, f->render_fence, NULL);
 
         vkDestroyCommandPool(g_Device, f->pool, NULL);
+
+        buffer_destroy(&f->camera_uniform);
 }
 
 bool frame_resources_submit(FrameResources *f) {
@@ -568,6 +602,9 @@ bool swapchain_create() {
 
         VK_EXPECT(vkCreateSwapchainKHR(g_Device, &create_info, NULL, &g_Swapchain.swapchain));
 
+        g_Width = capabilities.currentExtent.width;
+        g_Height = capabilities.currentExtent.height;
+
         vkGetSwapchainImagesKHR(g_Device, g_Swapchain.swapchain, &g_Swapchain.image_count, NULL);
 
         VkImage *images = malloc(sizeof(VkImage) * g_Swapchain.image_count);
@@ -597,7 +634,7 @@ void swapchain_destroy() {
 bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image_index) {
         FrameResources *next_frame = &g_Swapchain.frames[g_Swapchain.frame_index];
         // todo : is it ok to expect on vkWaitForFences here? If function RV
-        // represents whether or not to recreate swapchain, shouls you recreate if
+        // represents whether or not to recreate swapchain, should you recreate if
         // fence fails (times out) or quit?
         VK_EXPECT(vkWaitForFences(g_Device, 1, &next_frame->render_fence, VK_TRUE, 1000000000));
 
@@ -618,7 +655,9 @@ bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image
 
 bool descriptor_allocator_create(DescriptorAllocator *allocator) {
         VkDescriptorPoolSize pool_sizes[] = {
-            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1}};
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
+            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 3},
+        };
         EXPECT(create_descriptor_pool(pool_sizes, sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize),
                                       &allocator->pool));
 
@@ -732,12 +771,7 @@ bool RendererInit(RendererCreateInfo *c) {
 
         EXPECT(select_gpu());
         EXPECT(create_device());
-
-        EXPECT(swapchain_create());
-
         EXPECT(create_vma_allocator());
-
-        EXPECT(immediate_command_create(&g_ImmediateCommand));
 
         AllocatedImageCreateInfo allocated_image_info = {
             .extent =
@@ -755,36 +789,11 @@ bool RendererInit(RendererCreateInfo *c) {
 
         EXPECT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
 
-        EXPECT(descriptor_allocator_create(&g_DescriptorAllocator));
+        EXPECT(init_descriptors());
 
-        VkDescriptorSetLayoutBinding bindings[] = {
-            {.binding = 0,
-             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-             .descriptorCount = 1,
-             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
-        };
-        EXPECT(create_descriptor_layout(bindings, sizeof(bindings) / sizeof(*bindings),
-                                        &g_IntermediateImageDescriptorLayout));
-        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator,
-                                             &g_IntermediateImageDescriptorLayout, 1,
-                                             &g_IntermediateImageDescriptors));
+        EXPECT(swapchain_create());
 
-        VkDescriptorImageInfo image_info = {
-            .sampler = VK_NULL_HANDLE,
-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .imageView = g_IntermediateImage.image.image_view,
-        };
-
-        VkWriteDescriptorSet write_set = {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
-            .dstSet = g_IntermediateImageDescriptors,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .pImageInfo = &image_info,
-        };
-
-        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+        EXPECT(immediate_command_create(&g_ImmediateCommand));
 
         uint32_t sizes[] = {sizeof(float) * 16};
         ComputePipelineInfo pipeline_info = {
@@ -819,6 +828,8 @@ bool RendererInit(RendererCreateInfo *c) {
             },
         };
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
+            .descriptors = &g_GlobalDescriptorLayout,
+            .num_descriptors = 1,
             .push_constants = push_constants,
             .num_push_constants = 1,
             .vertex_shader = (const uint32_t *)colored_triangle_mesh_vert_file,
@@ -835,10 +846,10 @@ bool RendererInit(RendererCreateInfo *c) {
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
         Vertex vertices[4] = {
-            {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
-            {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
+            {.position = {0.5f, -0.5f, 1.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {0.5f, 0.5f, 1.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
+            {.position = {-0.5f, -0.5f, 1.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {-0.5f, 0.5f, 1.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
         };
         uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
         Mesh rectangle = {
@@ -862,14 +873,15 @@ void RendererShutdown() {
 
         descriptor_allocator_destroy(&g_DescriptorAllocator);
         vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
+        vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
 
         allocated_image_destroy(&g_IntermediateImage);
         mesh_buffer_destroy(&g_RectangleMesh);
 
-        vmaDestroyAllocator(g_Allocator);
+        swapchain_destroy();
         immediate_command_destroy(&g_ImmediateCommand);
 
-        swapchain_destroy();
+        vmaDestroyAllocator(g_Allocator);
 
         vkDestroyDevice(g_Device, NULL);
 
@@ -882,6 +894,8 @@ void RendererShutdown() {
 }
 
 void RendererDraw() {
+        // printf("Camera Position = {%.2f, %.2f, %.2f}\n", g_CameraPosition.x, g_CameraPosition.y,
+        //        g_CameraPosition.z);
         FrameResources *frame;
         Image *image;
         uint32_t image_index;
@@ -923,12 +937,12 @@ void RendererDraw() {
                                 NULL);
 
         struct {
-                float bottom[4];
-                float top[4];
+                vec4 top;
+                vec4 bottom;
                 float padding[8];
         } pc = {
-            .bottom = {1.0f, 0.0f, 0.0f, 1.0f},
-            .top = {0.0f, 0.0f, 1.0f, 1.0f},
+            .top = {1.0f, 0.0f, 0.0f, 1.0f},
+            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
         };
         vkCmdPushConstants(frame->command, g_GradientPipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT,
                            0, sizeof(pc), &pc);
@@ -971,15 +985,39 @@ void RendererDraw() {
         vkCmdSetViewport(frame->command, 0, 1, &viewport);
         vkCmdSetScissor(frame->command, 0, 1, &scissor);
 
-        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          g_TrianglePipeline.pipeline);
+        // vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        //                   g_TrianglePipeline.pipeline);
 
-        vkCmdDraw(frame->command, 3, 1, 0, 0);
+        // vkCmdDraw(frame->command, 3, 1, 0, 0);
 
+        // mesh pipeline
         vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, g_MeshPipeline.pipeline);
 
+        mat4 view = mat4_look_at(g_CameraPosition,
+                                 vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
+        // mat4 view = mat4_look_at((vec3){0.0f, 0.0f, 3.0f}, (vec3){0.0f, 0.0f, 0.0f},
+        //                          (vec3){0.0f, 1.0f, 0.0f});
+        mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
+        // proj.mm[1][1] *= -1;
+
+        mat4 test = MAT4_IDENTITY;
+        test.m00 *= 2;
+        test.m30 = 0.5;
+        test.m31 = 0.5;
+
+        printf("%.02f, %.02f, %.02f, %.02f, %.02f\n", proj.m00, proj.m11, proj.m22, proj.m23,
+               proj.m32);
+        // printf("{%.02f, %.02f, %.02f}\n", view.m30, view.m31, view.m32);
+        // CameraData camera = {.view = view, .proj = proj, .viewproj = mat4_mult(proj, view)};
+        CameraData camera = {.view = view, .proj = view, .viewproj = proj};
+        vmaCopyMemoryToAllocation(g_Allocator, &camera, frame->camera_uniform.allocation, 0,
+                                  sizeof(CameraData));
+
+        vkCmdBindDescriptorSets(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                g_MeshPipeline.layout, 0, 1, &frame->global_descriptors, 0, NULL);
+
         MeshPushConstants push_constants = {
-            .matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+            .matrix = MAT4_IDENTITY,
             .vertex_address = g_RectangleMesh.vertex_address,
         };
         vkCmdPushConstants(frame->command, g_MeshPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -1015,6 +1053,8 @@ void RendererDraw() {
         SDL_UpdateWindowSurface(g_Window);
 }
 
+void MoveCamera(vec3 delta) { g_CameraPosition = vec3_add(g_CameraPosition, delta); }
+
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -1022,6 +1062,51 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
         printf("[Validation]: %s\n", pCallbackData->pMessage);
 
         return VK_FALSE;
+}
+
+bool init_descriptors() {
+        EXPECT(descriptor_allocator_create(&g_DescriptorAllocator));
+
+        VkDescriptorSetLayoutBinding bindings[] = {
+            {
+                .binding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            },
+        };
+        EXPECT(create_descriptor_layout(bindings, sizeof(bindings) / sizeof(*bindings),
+                                        &g_IntermediateImageDescriptorLayout));
+        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator,
+                                             &g_IntermediateImageDescriptorLayout, 1,
+                                             &g_IntermediateImageDescriptors));
+
+        VkDescriptorSetLayoutBinding global_descriptor_bindings[] = {{
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        }};
+        EXPECT(create_descriptor_layout(global_descriptor_bindings, 1, &g_GlobalDescriptorLayout));
+
+        VkDescriptorImageInfo image_info = {
+            .sampler = VK_NULL_HANDLE,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .imageView = g_IntermediateImage.image.image_view,
+        };
+
+        VkWriteDescriptorSet write_set = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .dstSet = g_IntermediateImageDescriptors,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .pImageInfo = &image_info,
+        };
+
+        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+
+        return true;
 }
 
 bool create_vma_allocator() {

@@ -1,7 +1,8 @@
 #pragma once
 
+#include "linalgebra.h"
+
 #include <SDL3/SDL.h>
-#include <cglm/cglm.h>
 
 #define VK_NO_PROTOTYPES
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
@@ -46,11 +47,11 @@ bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, 
 void buffer_destroy(Buffer *buffer);
 
 typedef struct {
-        float position[3];
+        vec3 position;
         float uv_x;
-        float normal[3];
+        vec3 normal;
         float uv_y;
-        float color[4];
+        vec4 color;
 } Vertex;
 
 typedef struct {
@@ -61,7 +62,13 @@ typedef struct {
 } Mesh;
 
 typedef struct {
-        float matrix[16];
+        mat4 view;
+        mat4 proj;
+        mat4 viewproj;
+} CameraData;
+
+typedef struct {
+        mat4 matrix;
         VkDeviceAddress vertex_address;
 } MeshPushConstants;
 
@@ -137,6 +144,10 @@ typedef struct {
         VkSemaphore swapchain_semaphore;
         VkSemaphore render_semaphore;
         VkFence render_fence;
+
+        Buffer camera_uniform;
+
+        VkDescriptorSet global_descriptors;
 } FrameResources;
 
 bool frame_resources_create(FrameResources *f);
@@ -257,7 +268,11 @@ void RendererShutdown();
 
 void RendererDraw();
 
+void MoveCamera(vec3 delta);
+
 // Vulkan Initialization Functions
+
+bool init_descriptors();
 
 bool create_vma_allocator();
 
