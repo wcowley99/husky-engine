@@ -48,9 +48,7 @@ typedef union {
         (mat4) {                                                                                   \
                 {                                                                                  \
                         {1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f},                        \
-                            {0.0f, 0.0f, 1.0f, 0.0f}, {                                            \
-                                0.0f, 0.0f, 0.0f, 1.0f                                             \
-                        }                                                                          \
+                            {0.0f, 0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 1.0f}                     \
                 }                                                                                  \
         }
 
@@ -58,6 +56,10 @@ typedef union {
 
 float to_radians(float degrees);
 float to_degrees(float radians);
+
+void vec3_print(vec3 v, const char *name);
+void vec4_print(vec4 v, const char *name);
+void mat4_print(mat4 v, const char *name);
 
 vec3 vec3_add(vec3 a, vec3 b);
 vec4 vec4_add(vec4 a, vec4 b);
@@ -72,6 +74,7 @@ vec3 vec3_cross(vec3 a, vec3 b);
 float vec3_dot(vec3 a, vec3 b);
 
 mat4 mat4_mult(mat4 a, mat4 b);
+vec4 mat4_mul_vec(mat4 a, vec4 b);
 
 mat4 mat4_look_at(vec3 position, vec3 target, vec3 up);
 mat4 mat4_perspective(float fov, float aspect, float near, float far);

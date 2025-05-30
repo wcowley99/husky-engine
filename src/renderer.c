@@ -4,7 +4,6 @@
 #include "colored_triangle_mesh_vert.h"
 #include "colored_triangle_vert.h"
 #include "gradient2_comp.h"
-#include "gradient_comp.h"
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -656,7 +655,7 @@ bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image
 bool descriptor_allocator_create(DescriptorAllocator *allocator) {
         VkDescriptorPoolSize pool_sizes[] = {
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
-            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 3},
+            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 4},
         };
         EXPECT(create_descriptor_pool(pool_sizes, sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize),
                                       &allocator->pool));
@@ -846,10 +845,10 @@ bool RendererInit(RendererCreateInfo *c) {
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
         Vertex vertices[4] = {
-            {.position = {0.5f, -0.5f, 1.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {0.5f, 0.5f, 1.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
-            {.position = {-0.5f, -0.5f, 1.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {-0.5f, 0.5f, 1.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
+            {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
+            {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+            {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
         };
         uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
         Mesh rectangle = {
@@ -894,8 +893,6 @@ void RendererShutdown() {
 }
 
 void RendererDraw() {
-        // printf("Camera Position = {%.2f, %.2f, %.2f}\n", g_CameraPosition.x, g_CameraPosition.y,
-        //        g_CameraPosition.z);
         FrameResources *frame;
         Image *image;
         uint32_t image_index;
@@ -985,31 +982,20 @@ void RendererDraw() {
         vkCmdSetViewport(frame->command, 0, 1, &viewport);
         vkCmdSetScissor(frame->command, 0, 1, &scissor);
 
-        // vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        //                   g_TrianglePipeline.pipeline);
+        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          g_TrianglePipeline.pipeline);
 
-        // vkCmdDraw(frame->command, 3, 1, 0, 0);
+        vkCmdDraw(frame->command, 3, 1, 0, 0);
 
         // mesh pipeline
         vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, g_MeshPipeline.pipeline);
 
         mat4 view = mat4_look_at(g_CameraPosition,
                                  vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
-        // mat4 view = mat4_look_at((vec3){0.0f, 0.0f, 3.0f}, (vec3){0.0f, 0.0f, 0.0f},
-        //                          (vec3){0.0f, 1.0f, 0.0f});
         mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
-        // proj.mm[1][1] *= -1;
+        mat4 viewproj = mat4_mult(proj, view);
 
-        mat4 test = MAT4_IDENTITY;
-        test.m00 *= 2;
-        test.m30 = 0.5;
-        test.m31 = 0.5;
-
-        printf("%.02f, %.02f, %.02f, %.02f, %.02f\n", proj.m00, proj.m11, proj.m22, proj.m23,
-               proj.m32);
-        // printf("{%.02f, %.02f, %.02f}\n", view.m30, view.m31, view.m32);
-        // CameraData camera = {.view = view, .proj = proj, .viewproj = mat4_mult(proj, view)};
-        CameraData camera = {.view = view, .proj = view, .viewproj = proj};
+        CameraData camera = {.view = view, .proj = view, .viewproj = viewproj};
         vmaCopyMemoryToAllocation(g_Allocator, &camera, frame->camera_uniform.allocation, 0,
                                   sizeof(CameraData));
 
@@ -1053,7 +1039,11 @@ void RendererDraw() {
         SDL_UpdateWindowSurface(g_Window);
 }
 
-void MoveCamera(vec3 delta) { g_CameraPosition = vec3_add(g_CameraPosition, delta); }
+void MoveCamera(vec3 delta) {
+        // TODO: relative movement should be delta rotated by g_CameraViewDirection
+        vec3 relative = {delta.x, delta.y, -delta.z};
+        g_CameraPosition = vec3_add(g_CameraPosition, relative);
+}
 
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,

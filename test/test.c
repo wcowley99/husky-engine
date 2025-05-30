@@ -74,6 +74,22 @@ bool test_vec3_add() {
         return true;
 }
 
+bool test_mat4_mul_vec() {
+        vec4 a = {1, 2, 3, 4};
+        ASSERT(vec4_fuzz_eq(mat4_mul_vec(MAT4_IDENTITY, a), a));
+
+        mat4 scale = MAT4_IDENTITY;
+        scale.mm[0][0] = 2;
+        scale.mm[1][1] = 0.5f;
+        scale.mm[2][2] = 5.0f;
+        ASSERT(vec4_fuzz_eq(mat4_mul_vec(scale, a), (vec4){2, 1, 15, 4}));
+
+        scale.mm[3][0] = 1;
+        ASSERT(vec4_fuzz_eq(mat4_mul_vec(scale, a), (vec4){6, 1, 15, 4}));
+
+        return true;
+}
+
 bool test_mat4_mult() {
         mat4 a = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3};
         mat4 b = {2, 7, 1, 8, 2, 8, 1, 8, 2, 8, 4, 5, 9, 0, 4, 5};
@@ -88,6 +104,7 @@ bool test_mat4_mult() {
 bool linalgebra_suite() {
         RUN_TEST(test_vec3_add);
         RUN_TEST(test_mat4_mult);
+        RUN_TEST(test_mat4_mul_vec);
         return true;
 }
 

@@ -6,6 +6,13 @@ project(
   LANGUAGES C CXX
 )
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if (WIN32)
+  set(HEXEMBED "${CMAKE_BINARY_DIR}/Debug/hexembed.exe")
+else()
+  set(HEXEMBED "${CMAKE_BINARY_DIR}/hexembed")
+endif()
 
 # Generate Shader Headers
 file(GLOB SHADERS CONFIGURE_DEPENDS "shaders/*")
@@ -27,7 +34,7 @@ foreach(SHADER ${SHADERS})
   add_custom_command(
     OUTPUT ${OUTPUT_HEADER}
     BYPRODUCTS ${SPIRV_FILE}
-    COMMAND glslc ${SHADER} -o ${SPIRV_FILE} && ${CMAKE_BINARY_DIR}/Debug/hexembed.exe ${SPIRV_FILE} ${SHADER_NAME} > ${OUTPUT_HEADER}
+    COMMAND glslc ${SHADER} -o ${SPIRV_FILE} && ${HEXEMBED} ${SPIRV_FILE} ${SHADER_NAME} > ${OUTPUT_HEADER}
     DEPENDS hexembed
     COMMENT "Generating ${OUTPUT_HEADER} from ${SHADER}"
     VERBATIM
