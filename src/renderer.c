@@ -27,7 +27,22 @@ VkDevice g_Device;
 uint32_t g_QueueFamilyIndex;
 VkQueue g_GraphicsQueue;
 
-Swapchain g_Swapchain;
+// Swapchain
+VkSwapchainKHR g_Swapchain;
+uint32_t g_SwapchainImageCount;
+uint32_t g_SwapchainFrameIndex;
+Image *g_SwapchainImages;
+FrameResources *g_SwapchainFrameResources;
+const VkFormat g_SwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+
+// A reference to the current swapchain image
+Image *g_CurrentSwapchainImage;
+
+// A reference to the resources of the current swapchain frame
+FrameResources *g_CurrentFrameResources;
+
+// The current swapchain image index
+uint32_t g_CurrentSwapchainImageIndex;
 
 VmaAllocator g_Allocator;
 ImmediateCommand g_ImmediateCommand;
@@ -43,6 +58,8 @@ VkDescriptorSet g_IntermediateImageDescriptors;
 ComputePipeline g_GradientPipeline;
 GraphicsPipeline g_TrianglePipeline;
 GraphicsPipeline g_MeshPipeline;
+
+GraphicsPipeline *g_ActiveGraphicsPipeline;
 
 MeshBuffer g_RectangleMesh;
 
@@ -577,8 +594,6 @@ void graphics_pipeline_destroy(GraphicsPipeline *pipeline) {
 /// Swapchain
 ///////////////////////////////////////
 bool swapchain_create() {
-        g_Swapchain.format = VK_FORMAT_B8G8R8A8_SRGB;
-
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, g_Surface, &capabilities);
 
@@ -587,7 +602,7 @@ bool swapchain_create() {
             .surface = g_Surface,
             .presentMode = VK_PRESENT_MODE_FIFO_KHR,
             .minImageCount = capabilities.minImageCount + 1,
-            .imageFormat = g_Swapchain.format,
+            .imageFormat = g_SwapchainFormat,
             .imageExtent = capabilities.currentExtent,
             .imageArrayLayers = 1,
             .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -599,51 +614,51 @@ bool swapchain_create() {
             .oldSwapchain = VK_NULL_HANDLE,
         };
 
-        VK_EXPECT(vkCreateSwapchainKHR(g_Device, &create_info, NULL, &g_Swapchain.swapchain));
+        VK_EXPECT(vkCreateSwapchainKHR(g_Device, &create_info, NULL, &g_Swapchain));
 
         g_Width = capabilities.currentExtent.width;
         g_Height = capabilities.currentExtent.height;
 
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain.swapchain, &g_Swapchain.image_count, NULL);
+        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_SwapchainImageCount, NULL);
 
-        VkImage *images = malloc(sizeof(VkImage) * g_Swapchain.image_count);
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain.swapchain, &g_Swapchain.image_count, images);
+        VkImage *images = malloc(sizeof(VkImage) * g_SwapchainImageCount);
+        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_SwapchainImageCount, images);
 
-        g_Swapchain.images = malloc(sizeof(Image) * g_Swapchain.image_count);
-        g_Swapchain.frames = malloc(sizeof(FrameResources) * g_Swapchain.image_count);
-        for (uint32_t i = 0; i < g_Swapchain.image_count; i += 1) {
-                EXPECT(image_create(images[i], capabilities.currentExtent, g_Swapchain.format,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, &g_Swapchain.images[i]));
-                EXPECT(frame_resources_create(&g_Swapchain.frames[i]));
+        g_SwapchainImages = malloc(sizeof(Image) * g_SwapchainImageCount);
+        g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
+        for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
+                EXPECT(image_create(images[i], capabilities.currentExtent, g_SwapchainFormat,
+                                    VK_IMAGE_LAYOUT_UNDEFINED, &g_SwapchainImages[i]));
+                EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
         return true;
 }
 
 void swapchain_destroy() {
-        for (uint32_t i = 0; i < g_Swapchain.image_count; i += 1) {
-                image_destroy(&g_Swapchain.images[i]);
-                frame_resources_destroy(&g_Swapchain.frames[i]);
+        for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
+                image_destroy(&g_SwapchainImages[i]);
+                frame_resources_destroy(&g_SwapchainFrameResources[i]);
         }
-        free(g_Swapchain.images);
-        free(g_Swapchain.frames);
-        vkDestroySwapchainKHR(g_Device, g_Swapchain.swapchain, NULL);
+        free(g_SwapchainImages);
+        free(g_SwapchainFrameResources);
+        vkDestroySwapchainKHR(g_Device, g_Swapchain, NULL);
 }
 
-bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image_index) {
-        FrameResources *next_frame = &g_Swapchain.frames[g_Swapchain.frame_index];
+bool swapchain_next_frame() {
+        FrameResources *next = &g_SwapchainFrameResources[g_SwapchainFrameIndex];
         // todo : is it ok to expect on vkWaitForFences here? If function RV
         // represents whether or not to recreate swapchain, should you recreate if
         // fence fails (times out) or quit?
-        VK_EXPECT(vkWaitForFences(g_Device, 1, &next_frame->render_fence, VK_TRUE, 1000000000));
+        VK_EXPECT(vkWaitForFences(g_Device, 1, &next->render_fence, VK_TRUE, 1000000000));
 
-        VK_EXPECT(vkAcquireNextImageKHR(g_Device, g_Swapchain.swapchain, 1000000000,
-                                        next_frame->swapchain_semaphore, VK_NULL_HANDLE,
-                                        image_index));
+        VK_EXPECT(vkAcquireNextImageKHR(g_Device, g_Swapchain, 1000000000,
+                                        next->swapchain_semaphore, VK_NULL_HANDLE,
+                                        &g_CurrentSwapchainImageIndex));
 
-        g_Swapchain.frame_index = (g_Swapchain.frame_index + 1) % g_Swapchain.image_count;
-        *frame = next_frame;
-        *image = &g_Swapchain.images[*image_index];
+        g_SwapchainFrameIndex = (g_SwapchainFrameIndex + 1) % g_SwapchainImageCount;
+        g_CurrentFrameResources = next;
+        g_CurrentSwapchainImage = &g_SwapchainImages[g_CurrentSwapchainImageIndex];
 
         return true;
 }
@@ -892,28 +907,8 @@ void RendererShutdown() {
         SDL_Quit();
 }
 
-void RendererDraw() {
-        FrameResources *frame;
-        Image *image;
-        uint32_t image_index;
-
-        Image *intermediate_image = &g_IntermediateImage.image;
-
-        if (!swapchain_next_frame(&frame, &image, &image_index)) {
-                vkDeviceWaitIdle(g_Device);
-
-                swapchain_destroy();
-                swapchain_create();
-
-                return;
-        }
-
-        vkResetFences(g_Device, 1, &frame->render_fence);
-
-        begin_command_buffer(frame->command);
-
-        image_transition(intermediate_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
-        VkClearColorValue color = {{0.0f, 1.0f, 0.0f, 1.0f}};
+void DrawCommandClear(Image *image, VkClearColorValue color) {
+        image_transition(image, g_CurrentFrameResources->command, VK_IMAGE_LAYOUT_GENERAL);
         VkImageSubresourceRange range = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
@@ -921,45 +916,41 @@ void RendererDraw() {
             .baseArrayLayer = 0,
             .layerCount = VK_REMAINING_ARRAY_LAYERS,
         };
-        vkCmdClearColorImage(frame->command, intermediate_image->image, intermediate_image->layout,
-                             &color, 1, &range);
+        vkCmdClearColorImage(g_CurrentFrameResources->command, image->image, image->layout, &color,
+                             1, &range);
+}
 
-        // compute pipeline
-        image_transition(intermediate_image, frame->command, VK_IMAGE_LAYOUT_GENERAL);
-        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_COMPUTE,
-                          g_GradientPipeline.pipeline);
+void DrawCommandBindCompute(ComputePipeline *compute) {
+        vkCmdBindPipeline(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          compute->pipeline);
+}
 
-        vkCmdBindDescriptorSets(frame->command, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                g_GradientPipeline.layout, 0, 1, &g_IntermediateImageDescriptors, 0,
-                                NULL);
+void DrawCommandSetComputePushConstants(ComputePipeline *compute, size_t offset, size_t size,
+                                        void *data) {
+        vkCmdPushConstants(g_CurrentFrameResources->command, g_GradientPipeline.layout,
+                           VK_SHADER_STAGE_COMPUTE_BIT, offset, size, data);
+}
 
-        struct {
-                vec4 top;
-                vec4 bottom;
-                float padding[8];
-        } pc = {
-            .top = {1.0f, 0.0f, 0.0f, 1.0f},
-            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
-        };
-        vkCmdPushConstants(frame->command, g_GradientPipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT,
-                           0, sizeof(pc), &pc);
+void DrawCommandBindComputeDescriptor(ComputePipeline *compute, VkDescriptorSet descriptor,
+                                      uint32_t location) {
+        vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                compute->layout, location, 1, &descriptor, 0, NULL);
+}
 
-        vkCmdDispatch(frame->command, ceilf(intermediate_image->extent.width / 16.0f),
-                      ceilf(intermediate_image->extent.height / 16.0f), 1);
+void DrawCommandExecuteCompute(Image *image) {
+        vkCmdDispatch(g_CurrentFrameResources->command, ceilf(image->extent.width / 16.0f),
+                      ceilf(image->extent.height / 16.0f), 1);
+}
 
-        // graphics pipeline
-        image_transition(intermediate_image, frame->command,
-                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
+void DrawCommandBeginRendering(Image *image) {
         VkRenderingAttachmentInfo color_attachment = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = intermediate_image->image_view,
-            .imageLayout = intermediate_image->layout,
+            .imageView = image->image_view,
+            .imageLayout = image->layout,
         };
         VkRect2D scissor = {
             {0, 0},
-            {.width = intermediate_image->extent.width,
-             .height = intermediate_image->extent.height},
+            {.width = image->extent.width, .height = image->extent.height},
         };
         VkRenderingInfo render_info = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -969,26 +960,131 @@ void RendererDraw() {
             .layerCount = 1,
         };
 
-        vkCmdBeginRendering(frame->command, &render_info);
+        vkCmdBeginRendering(g_CurrentFrameResources->command, &render_info);
 
         VkViewport viewport = {
             .x = 0,
             .y = 0,
-            .width = intermediate_image->extent.width,
-            .height = intermediate_image->extent.height,
+            .width = image->extent.width,
+            .height = image->extent.height,
             .minDepth = 0.0f,
             .maxDepth = 1.0f,
         };
-        vkCmdSetViewport(frame->command, 0, 1, &viewport);
-        vkCmdSetScissor(frame->command, 0, 1, &scissor);
+        vkCmdSetViewport(g_CurrentFrameResources->command, 0, 1, &viewport);
+        vkCmdSetScissor(g_CurrentFrameResources->command, 0, 1, &scissor);
+}
 
-        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          g_TrianglePipeline.pipeline);
+void DrawCommandBindGraphicsPipeline(GraphicsPipeline *graphics) {
+        vkCmdBindPipeline(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          graphics->pipeline);
+        g_ActiveGraphicsPipeline = graphics;
+}
 
-        vkCmdDraw(frame->command, 3, 1, 0, 0);
+void DrawCommandSetCameraData(CameraData *camera) {
+        if (!g_ActiveGraphicsPipeline) {
+                printf("No currently bound graphics pipeline!");
+                return;
+        }
+        vmaCopyMemoryToAllocation(g_Allocator, camera,
+                                  g_CurrentFrameResources->camera_uniform.allocation, 0,
+                                  sizeof(CameraData));
+
+        vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                g_ActiveGraphicsPipeline->layout, 0, 1,
+                                &g_CurrentFrameResources->global_descriptors, 0, NULL);
+}
+
+void DrawCommandSetGraphicsPushConstants(size_t offset, size_t size, void *data) {
+        vkCmdPushConstants(g_CurrentFrameResources->command, g_MeshPipeline.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT, offset, size, data);
+}
+
+void DrawCommandBindIndexBuffer(MeshBuffer *mesh) {
+        vkCmdBindIndexBuffer(g_CurrentFrameResources->command, mesh->index.buffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+}
+
+void DrawCommandCopyToSwapchain(Image *image) {
+        image_transition(image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        image_transition(g_CurrentSwapchainImage, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        image_blit(g_CurrentFrameResources->command, image, g_CurrentSwapchainImage);
+}
+
+bool DrawCommandBeginFrame() {
+        if (!swapchain_next_frame()) {
+                vkDeviceWaitIdle(g_Device);
+
+                swapchain_destroy();
+                swapchain_create();
+
+                return false;
+        }
+
+        vkResetFences(g_Device, 1, &g_CurrentFrameResources->render_fence);
+        begin_command_buffer(g_CurrentFrameResources->command);
+
+        return true;
+}
+
+void DrawCommandEndFrame() {
+        image_transition(g_CurrentSwapchainImage, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+        vkEndCommandBuffer(g_CurrentFrameResources->command);
+
+        frame_resources_submit(g_CurrentFrameResources);
+
+        VkPresentInfoKHR present_info = {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .swapchainCount = 1,
+            .pSwapchains = &g_Swapchain,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &g_CurrentFrameResources->render_semaphore,
+            .pImageIndices = &g_CurrentSwapchainImageIndex,
+        };
+        vkQueuePresentKHR(g_GraphicsQueue, &present_info);
+
+        // Refresh the window
+        SDL_UpdateWindowSurface(g_Window);
+}
+
+void RendererDraw() {
+        if (!DrawCommandBeginFrame()) {
+                return;
+        }
+        DrawCommandClear(&g_IntermediateImage.image, (VkClearColorValue){0.0f, 0.0f, 1.0f, 0.0f});
+
+        // compute pipeline
+        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_GENERAL);
+        DrawCommandBindCompute(&g_GradientPipeline);
+        DrawCommandBindComputeDescriptor(&g_GradientPipeline, g_IntermediateImageDescriptors, 0);
+
+        struct {
+                vec4 top;
+                vec4 bottom;
+                float padding[8];
+        } pc = {
+            .top = {1.0f, 0.0f, 0.0f, 1.0f},
+            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
+        };
+        DrawCommandSetComputePushConstants(&g_GradientPipeline, 0, sizeof(pc), &pc);
+        DrawCommandExecuteCompute(&g_IntermediateImage.image);
+
+        // graphics pipeline
+        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        DrawCommandBeginRendering(&g_IntermediateImage.image);
+        DrawCommandBindGraphicsPipeline(&g_TrianglePipeline);
+
+        vkCmdDraw(g_CurrentFrameResources->command, 3, 1, 0, 0);
 
         // mesh pipeline
-        vkCmdBindPipeline(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS, g_MeshPipeline.pipeline);
+        DrawCommandBindGraphicsPipeline(&g_MeshPipeline);
 
         mat4 view = mat4_look_at(g_CameraPosition,
                                  vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
@@ -996,47 +1092,21 @@ void RendererDraw() {
         mat4 viewproj = mat4_mult(proj, view);
 
         CameraData camera = {.view = view, .proj = view, .viewproj = viewproj};
-        vmaCopyMemoryToAllocation(g_Allocator, &camera, frame->camera_uniform.allocation, 0,
-                                  sizeof(CameraData));
-
-        vkCmdBindDescriptorSets(frame->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                g_MeshPipeline.layout, 0, 1, &frame->global_descriptors, 0, NULL);
+        DrawCommandSetCameraData(&camera);
 
         MeshPushConstants push_constants = {
             .matrix = MAT4_IDENTITY,
             .vertex_address = g_RectangleMesh.vertex_address,
         };
-        vkCmdPushConstants(frame->command, g_MeshPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(MeshPushConstants), &push_constants);
-        vkCmdBindIndexBuffer(frame->command, g_RectangleMesh.index.buffer, 0, VK_INDEX_TYPE_UINT32);
+        DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
+        DrawCommandBindIndexBuffer(&g_RectangleMesh);
 
-        vkCmdDrawIndexed(frame->command, 6, 1, 0, 0, 0);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, 6, 1, 0, 0, 0);
 
-        vkCmdEndRendering(frame->command);
+        vkCmdEndRendering(g_CurrentFrameResources->command);
 
-        image_transition(intermediate_image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        image_transition(image, frame->command, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-        image_blit(frame->command, intermediate_image, image);
-
-        image_transition(image, frame->command, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
-        vkEndCommandBuffer(frame->command);
-
-        frame_resources_submit(frame);
-
-        VkPresentInfoKHR present_info = {
-            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .swapchainCount = 1,
-            .pSwapchains = &g_Swapchain.swapchain,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &frame->render_semaphore,
-            .pImageIndices = &image_index,
-        };
-        vkQueuePresentKHR(g_GraphicsQueue, &present_info);
-
-        // Refresh the window
-        SDL_UpdateWindowSurface(g_Window);
+        DrawCommandCopyToSwapchain(&g_IntermediateImage.image);
+        DrawCommandEndFrame();
 }
 
 void MoveCamera(vec3 delta) {

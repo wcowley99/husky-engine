@@ -218,20 +218,10 @@ void graphics_pipeline_destroy(GraphicsPipeline *pipeline);
 /// Swapchain
 ///////////////////////////////////////
 
-typedef struct {
-        VkSwapchainKHR swapchain;
-        VkFormat format;
-        uint32_t image_count;
-        uint32_t frame_index;
-        Image *images;
-        FrameResources *frames;
-} Swapchain;
-
 bool swapchain_create();
-
 void swapchain_destroy();
 
-bool swapchain_next_frame(FrameResources **frame, Image **image, uint32_t *image_index);
+bool swapchain_next_frame();
 
 ///////////////////////////////////////
 /// Descriptor Allocator
