@@ -1,6 +1,7 @@
 #pragma once
 
 #include "linalgebra.h"
+#include "loader.h"
 
 #include <SDL3/SDL.h>
 
@@ -45,21 +46,6 @@ typedef struct {
 
 bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
 void buffer_destroy(Buffer *buffer);
-
-typedef struct {
-        vec3 position;
-        float uv_x;
-        vec3 normal;
-        float uv_y;
-        vec4 color;
-} Vertex;
-
-typedef struct {
-        Vertex *vertices;
-        uint32_t *indices;
-        uint32_t num_vertices;
-        uint32_t num_indices;
-} Mesh;
 
 typedef struct {
         mat4 view;

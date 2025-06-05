@@ -47,7 +47,6 @@ vec3 vec3_cross(vec3 a, vec3 b) {
 
 float vec3_dot(vec3 a, vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-// 16 * vec4_dot => 64 mults, 48 adds
 mat4 mat4_mult(mat4 a, mat4 b) {
         return (mat4){
             a.m00 * b.m00 + a.m10 * b.m01 + a.m20 * b.m02 + a.m30 * b.m03,

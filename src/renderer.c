@@ -874,6 +874,8 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         mesh_buffer_create(&rectangle, &g_RectangleMesh);
 
+        LoadFromFile("../assets/objs/stone-golem.obj");
+
         return true;
 }
 

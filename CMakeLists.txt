@@ -69,10 +69,12 @@ target_compile_definitions(VulkanMemoryAllocator PUBLIC
 )
 
 add_library(engine-lib
-  src/renderer.c
-  src/renderer.h
   src/linalgebra.c
   src/linalgebra.h
+  src/loader.c
+  src/loader.h
+  src/renderer.c
+  src/renderer.h
   ${SHADER_HEADERS}
 )
 
