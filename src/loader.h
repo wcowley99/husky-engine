@@ -2,6 +2,7 @@
 
 #include "linalgebra.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -19,6 +20,7 @@ typedef struct {
         uint32_t num_indices;
 } Mesh;
 
-Mesh *LoadObjFromFile(const char *filename);
+void MeshFree(Mesh *mesh);
 
-Mesh *LoadFromFile(const char *filename);
+bool LoadObjFromFile(Mesh *mesh, const char *filename);
+bool LoadFromFile(Mesh *mesh, const char *filename);

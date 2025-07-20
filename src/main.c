@@ -28,6 +28,14 @@ bool handle_move() {
                 vec3 delta = {.x = 0.02f, .y = 0.0f, .z = 0.00f};
                 MoveCamera(delta);
         }
+        if (keys[SDL_SCANCODE_SPACE]) {
+                vec3 delta = {.x = 0.0f, .y = 0.02f, .z = 0.0f};
+                MoveCamera(delta);
+        }
+        if (keys[SDL_SCANCODE_LSHIFT]) {
+                vec3 delta = {.x = 0.0f, .y = -0.02f, .z = 0.0f};
+                MoveCamera(delta);
+        }
 
         return false;
 }

@@ -2,7 +2,6 @@
 
 #include "colored_triangle_frag.h"
 #include "colored_triangle_mesh_vert.h"
-#include "colored_triangle_vert.h"
 #include "gradient2_comp.h"
 
 #include <SDL3/SDL_vulkan.h>
@@ -60,6 +59,8 @@ GraphicsPipeline g_TrianglePipeline;
 GraphicsPipeline g_MeshPipeline;
 
 GraphicsPipeline *g_ActiveGraphicsPipeline;
+
+Mesh g_Mesh;
 
 MeshBuffer g_RectangleMesh;
 
@@ -820,19 +821,19 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(compute_pipeline_create(&pipeline_info, &g_GradientPipeline));
 
-        GraphicsPipelineCreateInfo graphics_pipeline_info = {
-            .vertex_shader = (const uint32_t *)colored_triangle_vert_file,
-            .vertex_shader_size = colored_triangle_vert_size / 4,
-            .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
-            .fragment_shader_size = colored_triangle_frag_size / 4,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            .polygon_mode = VK_POLYGON_MODE_FILL,
-            .cull_mode = VK_CULL_MODE_NONE,
-            .front_face = VK_FRONT_FACE_CLOCKWISE,
-            .color_attachment_format = g_IntermediateImage.image.format,
-            .depth_attachment_format = VK_FORMAT_UNDEFINED,
-        };
-        EXPECT(graphics_pipeline_create(&graphics_pipeline_info, &g_TrianglePipeline));
+        // GraphicsPipelineCreateInfo graphics_pipeline_info = {
+        //     .vertex_shader = (const uint32_t *)colored_triangle_vert_file,
+        //     .vertex_shader_size = colored_triangle_vert_size / 4,
+        //     .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
+        //     .fragment_shader_size = colored_triangle_frag_size / 4,
+        //     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        //     .polygon_mode = VK_POLYGON_MODE_FILL,
+        //     .cull_mode = VK_CULL_MODE_NONE,
+        //     .front_face = VK_FRONT_FACE_CLOCKWISE,
+        //     .color_attachment_format = g_IntermediateImage.image.format,
+        //     .depth_attachment_format = VK_FORMAT_UNDEFINED,
+        // };
+        // EXPECT(graphics_pipeline_create(&graphics_pipeline_info, &g_TrianglePipeline));
 
         VkPushConstantRange push_constants[] = {
             {
@@ -859,27 +860,28 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
-        Vertex vertices[4] = {
-            {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
-            {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
-            {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
-        };
-        uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
-        Mesh rectangle = {
-            .vertices = vertices,
-            .num_vertices = 4,
-            .indices = indices,
-            .num_indices = 6,
-        };
-        mesh_buffer_create(&rectangle, &g_RectangleMesh);
+        // Vertex vertices[4] = {
+        //     {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
+        //     {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
+        //     {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
+        //     {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
+        // };
+        // uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
+        // Mesh rectangle = {
+        //     .vertices = vertices,
+        //     .num_vertices = 4,
+        //     .indices = indices,
+        //     .num_indices = 6,
+        // };
 
-        LoadFromFile("../assets/objs/stone-golem.obj");
+        LoadFromFile(&g_Mesh, "../assets/objs/stone-golem.obj");
+        mesh_buffer_create(&g_Mesh, &g_RectangleMesh);
 
         return true;
 }
 
 void RendererShutdown() {
+        MeshFree(&g_Mesh);
         // Make sure the GPU has finished all work
         vkDeviceWaitIdle(g_Device);
 
@@ -1081,9 +1083,9 @@ void RendererDraw() {
                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
         DrawCommandBeginRendering(&g_IntermediateImage.image);
-        DrawCommandBindGraphicsPipeline(&g_TrianglePipeline);
-
-        vkCmdDraw(g_CurrentFrameResources->command, 3, 1, 0, 0);
+        // DrawCommandBindGraphicsPipeline(&g_TrianglePipeline);
+        //
+        // vkCmdDraw(g_CurrentFrameResources->command, 3, 1, 0, 0);
 
         // mesh pipeline
         DrawCommandBindGraphicsPipeline(&g_MeshPipeline);
@@ -1103,7 +1105,7 @@ void RendererDraw() {
         DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
         DrawCommandBindIndexBuffer(&g_RectangleMesh);
 
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, 6, 1, 0, 0, 0);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, g_Mesh.num_indices, 1, 0, 0, 0);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 

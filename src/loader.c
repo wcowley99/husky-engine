@@ -1,9 +1,10 @@
 #include "loader.h"
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+const uint32_t DEFAULT_CAPACITY = 64;
 
 typedef struct {
         float u;
@@ -11,40 +12,65 @@ typedef struct {
 } TextureCoord;
 
 typedef struct {
-        uint32_t count;
-        uint32_t capacity;
-        vec3 *data;
-} vec3List;
+        vec3 *positions;
+        uint32_t pos_count;
+        uint32_t pos_capacity;
 
-bool vec3ListCreate(uint32_t capacity, vec3List *list) {
-        list->capacity = capacity;
-        list->count = 0;
-        list->data = malloc(sizeof(vec3) * capacity);
+        vec3 *normals;
+        uint32_t normal_count;
+        uint32_t normal_capacity;
 
-        return list->data != NULL;
+        TextureCoord *uvs;
+        uint32_t uv_count;
+        uint32_t uv_capacity;
+
+        Mesh mesh;
+        uint32_t vertex_capacity;
+        uint32_t index_capacity;
+} MeshBuilder;
+
+bool MeshBuilderCreate(MeshBuilder *builder) {
+        builder->pos_count = 0;
+        builder->pos_capacity = DEFAULT_CAPACITY;
+        builder->positions = malloc(sizeof(vec3) * builder->pos_capacity);
+
+        builder->normal_count = 0;
+        builder->normal_capacity = DEFAULT_CAPACITY;
+        builder->normals = malloc(sizeof(vec3) * builder->pos_capacity);
+
+        builder->uv_count = 0;
+        builder->uv_capacity = DEFAULT_CAPACITY;
+        builder->uvs = malloc(sizeof(TextureCoord) * builder->pos_capacity);
+
+        builder->vertex_capacity = DEFAULT_CAPACITY;
+        builder->mesh.num_vertices = 0;
+        builder->mesh.vertices = malloc(sizeof(Vertex) * builder->vertex_capacity);
+
+        builder->index_capacity = DEFAULT_CAPACITY;
+        builder->mesh.num_indices = 0;
+        builder->mesh.indices = malloc(sizeof(Vertex) * builder->index_capacity);
+
+        return true;
 }
 
-typedef struct {
-        uint32_t count;
-        uint32_t capacity;
-        TextureCoord *data;
-} TextureCoordList;
-
-bool TextureCoordListCreate(uint32_t capacity, TextureCoordList *list) {
-        list->capacity = capacity;
-        list->count = 0;
-        list->data = malloc(sizeof(TextureCoord) * capacity);
-
-        return list->data != NULL;
+void MeshBuilderFree(MeshBuilder *builder) {
+        free(builder->positions);
+        free(builder->normals);
+        free(builder->uvs);
 }
 
-bool ObjHandleVertexPosition(vec3List *p, char *line_save) {
+void MeshFree(Mesh *mesh) {
+        free(mesh->indices);
+        free(mesh->vertices);
+}
+
+bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
         char *x_str = strtok_r(NULL, " ", &line_save);
         char *y_str = strtok_r(NULL, " ", &line_save);
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %d\n", p->count);
+                printf("Error reading vertex position %d\n", b->pos_count);
                 return false;
         }
 
@@ -52,27 +78,27 @@ bool ObjHandleVertexPosition(vec3List *p, char *line_save) {
         float y = strtof(y_str, NULL);
         float z = strtof(z_str, NULL);
 
-        if (p->count == p->capacity) {
-                p->capacity *= 2;
-                p->data = realloc(p->data, sizeof(vec3) * p->capacity);
+        if (b->pos_count == b->pos_capacity) {
+                b->pos_capacity *= 2;
+                b->positions = realloc(b->positions, sizeof(vec3) * b->pos_capacity);
         }
 
-        p->data[p->count].x = x;
-        p->data[p->count].y = y;
-        p->data[p->count].z = z;
+        b->positions[b->pos_count].x = x;
+        b->positions[b->pos_count].y = y;
+        b->positions[b->pos_count].z = z;
 
-        p->count += 1;
+        b->pos_count += 1;
 
         return true;
 }
 
-bool ObjHandleVertexNormals(vec3List *p, char *line_save) {
+bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
         char *x_str = strtok_r(NULL, " ", &line_save);
         char *y_str = strtok_r(NULL, " ", &line_save);
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %d\n", p->count);
+                printf("Error reading vertex position %d\n", b->normal_count);
                 return false;
         }
 
@@ -80,26 +106,78 @@ bool ObjHandleVertexNormals(vec3List *p, char *line_save) {
         float ny = strtof(y_str, NULL);
         float nz = strtof(z_str, NULL);
 
-        if (p->count == p->capacity) {
-                p->capacity *= 2;
-                p->data = realloc(p->data, sizeof(vec3) * p->capacity);
+        if (b->normal_count == b->normal_capacity) {
+                b->normal_capacity *= 2;
+                b->normals = realloc(b->normals, sizeof(vec3) * b->normal_capacity);
         }
 
-        p->data[p->count].x = nx;
-        p->data[p->count].y = ny;
-        p->data[p->count].z = nz;
+        b->normals[b->normal_count].x = nx;
+        b->normals[b->normal_count].y = ny;
+        b->normals[b->normal_count].z = nz;
 
-        p->count += 1;
+        b->normal_count += 1;
 
         return true;
 }
 
-Mesh *LoadObjFromFile(const char *filename) {
+bool ObjHandleVertex(MeshBuilder *b, char *contents) {
+        Vertex *vertex = &b->mesh.vertices[b->mesh.num_vertices];
+        vertex->color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
+        char *next = strtok_r(NULL, "/", &contents);
+
+        if (!next) {
+                printf("Error reading vertex position index.\n");
+                return false;
+        }
+        uint32_t pos = strtoul(next, NULL, 10) - 1;
+        vertex->position = b->positions[pos];
+
+        next = strtok_r(NULL, "/", &contents);
+        if (next && next[0] != '\0') {
+                uint32_t uv = strtoul(next, NULL, 10) - 1;
+                vertex->uv_x = b->uvs[uv].u;
+                vertex->uv_y = b->uvs[uv].v;
+        }
+
+        next = strtok_r(NULL, "/", &contents);
+        if (next && next[0] != '\0') {
+                uint32_t vn = strtoul(next, NULL, 10) - 1;
+                vertex->normal = b->normals[vn];
+        }
+
+        return true;
+}
+
+bool ObjHandleFaces(MeshBuilder *b, char *line_save) {
+        if (b->mesh.num_vertices + 3 >= b->vertex_capacity) {
+                b->vertex_capacity *= 2;
+                b->mesh.vertices = realloc(b->mesh.vertices, sizeof(Vertex) * b->vertex_capacity);
+        }
+
+        if (b->mesh.num_indices + 3 >= b->index_capacity) {
+                b->index_capacity *= 2;
+                b->mesh.indices = realloc(b->mesh.indices, sizeof(uint32_t) * b->vertex_capacity);
+        }
+
+        for (uint32_t i = 0; i < 3; i += 1) {
+                char *vertex = strtok_r(NULL, " ", &line_save);
+
+                ObjHandleVertex(b, vertex);
+                b->mesh.num_vertices += 1;
+
+                b->mesh.indices[b->mesh.num_indices] = b->mesh.num_indices;
+                b->mesh.num_indices += 1;
+        }
+
+        return true;
+}
+
+bool LoadObjFromFile(Mesh *mesh, const char *filename) {
         FILE *f = fopen(filename, "rb");
 
         if (!f) {
                 printf("Failed to open file %s\n", filename);
-                return NULL;
+                return false;
         }
 
         fseek(f, 0, SEEK_END);
@@ -111,17 +189,11 @@ Mesh *LoadObjFromFile(const char *filename) {
         fread(data, filesize, 1, f);
         fclose(f);
 
+        MeshBuilder builder;
+        MeshBuilderCreate(&builder);
+
         char *save;
         char *line = strtok_r(data, "\n", &save);
-
-        vec3List positions;
-        vec3ListCreate(1000, &positions);
-
-        vec3List normals;
-        vec3ListCreate(1000, &normals);
-
-        TextureCoordList uvs;
-        TextureCoordListCreate(1000, &uvs);
 
         while (line) {
                 char *line_save;
@@ -130,36 +202,40 @@ Mesh *LoadObjFromFile(const char *filename) {
                 if (!token) {
                         printf("Error parsing %s.\n", filename);
 
-                        break;
+                        return false;
                 }
 
                 if (strcmp(token, "v") == 0) {
-                        ObjHandleVertexPosition(&positions, line_save);
+                        ObjHandleVertexPosition(&builder, line_save);
                 } else if (strcmp(token, "vn") == 0) {
-                        ObjHandleVertexNormals(&normals, line_save);
+                        ObjHandleVertexNormals(&builder, line_save);
+                } else if (strcmp(token, "vt") == 0) {
+                        // todo: uvs
                 } else if (strcmp(token, "f") == 0) {
-                        // handle faces
+                        ObjHandleFaces(&builder, line_save);
+                } else {
+                        printf("Unknown token for line \"%s\"\n", token);
                 }
 
                 line = strtok_r(NULL, "\n", &save);
         }
 
-        printf("num vertex positions: %d\n", positions.count);
+        printf("num vertex positions: %d\n", builder.pos_count);
 
         free(data);
-        free(positions.data);
-        free(normals.data);
-        free(uvs.data);
-        return NULL;
+        MeshBuilderFree(&builder);
+        *mesh = builder.mesh;
+
+        return true;
 }
 
-Mesh *LoadFromFile(const char *filename) {
+bool LoadFromFile(Mesh *mesh, const char *filename) {
         int len = strlen(filename);
 
         if (strcmp(filename + (len - 4), ".obj") == 0) {
-                return LoadObjFromFile(filename);
+                return LoadObjFromFile(mesh, filename);
         }
 
         printf("Could not determine filetype for file %s\n", filename);
-        return NULL;
+        return false;
 }

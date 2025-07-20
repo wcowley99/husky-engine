@@ -2,7 +2,8 @@
 #extension GL_EXT_buffer_reference : require
 
 layout(location = 0) out vec3 outColor;
-layout(location = 1) out vec2 outUV;
+layout(location = 1) out vec3 outNormal;
+layout(location = 2) out vec2 outUV;
 
 layout(set = 0, binding = 0) uniform CameraData {
     mat4 view;
@@ -37,7 +38,7 @@ void main() {
     // output data
     gl_Position = camera_data.viewproj * PushConstants.model * vec4(v.position, 1.0f);
     outColor = v.color.xyz;
+    outNormal = v.normal;
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;
 }
-
