@@ -51,6 +51,7 @@ DescriptorAllocator g_DescriptorAllocator;
 VkDescriptorSetLayout g_GlobalDescriptorLayout;
 
 AllocatedImage g_IntermediateImage;
+AllocatedImage g_DepthImage;
 VkDescriptorSetLayout g_IntermediateImageDescriptorLayout;
 VkDescriptorSet g_IntermediateImageDescriptors;
 
@@ -149,7 +150,7 @@ void mesh_buffer_destroy(MeshBuffer *buffer) {
 ///////////////////////////////////////
 
 bool image_create(VkImage vk_image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
-                  Image *image) {
+                  VkImageAspectFlags flags, Image *image) {
         image->image = vk_image;
 
         image->extent.width = extent.width;
@@ -167,7 +168,7 @@ bool image_create(VkImage vk_image, VkExtent2D extent, VkFormat format, VkImageL
         };
 
         VkImageSubresourceRange range = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .aspectMask = flags,
             .baseArrayLayer = 0,
             .layerCount = 1,
             .baseMipLevel = 0,
@@ -287,7 +288,7 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
             .height = info->extent.height,
         };
         EXPECT(image_create(raw_image, extent, info->format, VK_IMAGE_LAYOUT_UNDEFINED,
-                            &image->image));
+                            info->aspect_flags, &image->image));
 
         return true;
 }
@@ -483,7 +484,11 @@ bool graphics_pipeline_create(GraphicsPipelineCreateInfo *create_info, GraphicsP
 
         VkPipelineDepthStencilStateCreateInfo depth_testing = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthCompareOp = VK_COMPARE_OP_NEVER,
+            .depthTestEnable = create_info->depth_testing,
+            .depthWriteEnable = create_info->depth_testing,
+            .depthCompareOp = create_info->depth_compare_op,
+            .front = {},
+            .back = {},
             .minDepthBounds = 0.0f,
             .maxDepthBounds = 1.0f,
         };
@@ -629,7 +634,8 @@ bool swapchain_create() {
         g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
                 EXPECT(image_create(images[i], capabilities.currentExtent, g_SwapchainFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, &g_SwapchainImages[i]));
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT,
+                                    &g_SwapchainImages[i]));
                 EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
@@ -798,11 +804,27 @@ bool RendererInit(RendererCreateInfo *c) {
             .format = VK_FORMAT_R16G16B16A16_SFLOAT,
             .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
+            .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
             .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
         };
 
+        AllocatedImageCreateInfo depth_image_info = {
+            .extent =
+                {
+                    .width = c->width,
+                    .height = c->height,
+                    .depth = 1,
+                },
+            .format = VK_FORMAT_D32_SFLOAT,
+            .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
+            .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        };
+
         EXPECT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
+        EXPECT(allocated_image_create(&depth_image_info, &g_DepthImage));
 
         EXPECT(init_descriptors());
 
@@ -854,9 +876,11 @@ bool RendererInit(RendererCreateInfo *c) {
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
             .polygon_mode = VK_POLYGON_MODE_FILL,
             .cull_mode = VK_CULL_MODE_NONE,
-            .front_face = VK_FRONT_FACE_CLOCKWISE,
+            .front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE,
             .color_attachment_format = g_IntermediateImage.image.format,
-            .depth_attachment_format = VK_FORMAT_UNDEFINED,
+            .depth_attachment_format = VK_FORMAT_D32_SFLOAT,
+            .depth_testing = true,
+            .depth_compare_op = VK_COMPARE_OP_LESS,
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
@@ -894,6 +918,7 @@ void RendererShutdown() {
         vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
 
         allocated_image_destroy(&g_IntermediateImage);
+        allocated_image_destroy(&g_DepthImage);
         mesh_buffer_destroy(&g_RectangleMesh);
 
         swapchain_destroy();
@@ -952,6 +977,14 @@ void DrawCommandBeginRendering(Image *image) {
             .imageView = image->image_view,
             .imageLayout = image->layout,
         };
+        VkRenderingAttachmentInfo depth_attachment = {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = g_DepthImage.image.image_view,
+            .imageLayout = g_DepthImage.image.layout,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue.depthStencil.depth = 1.0f,
+        };
         VkRect2D scissor = {
             {0, 0},
             {.width = image->extent.width, .height = image->extent.height},
@@ -961,6 +994,7 @@ void DrawCommandBeginRendering(Image *image) {
             .renderArea = scissor,
             .colorAttachmentCount = 1,
             .pColorAttachments = &color_attachment,
+            .pDepthAttachment = &depth_attachment,
             .layerCount = 1,
         };
 
@@ -1081,6 +1115,8 @@ void RendererDraw() {
         // graphics pipeline
         image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        image_transition(&g_DepthImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
         DrawCommandBeginRendering(&g_IntermediateImage.image);
         // DrawCommandBindGraphicsPipeline(&g_TrianglePipeline);

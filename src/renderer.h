@@ -96,7 +96,7 @@ typedef struct {
 } Image;
 
 bool image_create(VkImage vk_image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
-                  Image *image);
+                  VkImageAspectFlags flags, Image *image);
 
 void image_destroy(Image *image);
 
@@ -110,6 +110,7 @@ typedef struct {
         VkImageUsageFlags usage_flags;
         VmaMemoryUsage memory_usage;
         VkMemoryPropertyFlags memory_props;
+        VkImageAspectFlags aspect_flags;
 } AllocatedImageCreateInfo;
 
 typedef struct {
@@ -189,6 +190,9 @@ typedef struct {
 
         const uint32_t *fragment_shader;
         uint32_t fragment_shader_size;
+
+        bool depth_testing;
+        VkCompareOp depth_compare_op;
 } GraphicsPipelineCreateInfo;
 
 typedef struct {
