@@ -875,7 +875,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .fragment_shader_size = colored_triangle_frag_size / 4,
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
             .polygon_mode = VK_POLYGON_MODE_FILL,
-            .cull_mode = VK_CULL_MODE_NONE,
+            .cull_mode = VK_CULL_MODE_BACK_BIT,
             .front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE,
             .color_attachment_format = g_IntermediateImage.image.format,
             .depth_attachment_format = VK_FORMAT_D32_SFLOAT,
