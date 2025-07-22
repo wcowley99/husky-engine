@@ -75,6 +75,8 @@ add_library(engine-lib
   src/loader.h
   src/renderer.c
   src/renderer.h
+  src/util.h
+  src/util.c
   ${SHADER_HEADERS}
 )
 

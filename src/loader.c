@@ -1,62 +1,52 @@
 #include "loader.h"
 
+#include "util.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-const uint32_t DEFAULT_CAPACITY = 64;
+const size_t DEFAULT_CAPACITY = 64;
 
 typedef struct {
-        float u;
-        float v;
-} TextureCoord;
+        vec3List positions;
+        vec3List normals;
+        TextureCoordList uvs;
 
-typedef struct {
-        vec3 *positions;
-        uint32_t pos_count;
-        uint32_t pos_capacity;
-
-        vec3 *normals;
-        uint32_t normal_count;
-        uint32_t normal_capacity;
-
-        TextureCoord *uvs;
-        uint32_t uv_count;
-        uint32_t uv_capacity;
-
-        Mesh mesh;
-        uint32_t vertex_capacity;
-        uint32_t index_capacity;
+        VertexList vertices;
+        uint32_tList indices;
 } MeshBuilder;
 
+IMPL_LIST_OPERATIONS(TextureCoord)
+IMPL_LIST_OPERATIONS(Vertex)
+
 bool MeshBuilderCreate(MeshBuilder *builder) {
-        builder->pos_count = 0;
-        builder->pos_capacity = DEFAULT_CAPACITY;
-        builder->positions = malloc(sizeof(vec3) * builder->pos_capacity);
+        builder->positions = vec3ListCreate(DEFAULT_CAPACITY);
+        builder->normals = vec3ListCreate(DEFAULT_CAPACITY);
+        builder->uvs = TextureCoordListCreate(DEFAULT_CAPACITY);
 
-        builder->normal_count = 0;
-        builder->normal_capacity = DEFAULT_CAPACITY;
-        builder->normals = malloc(sizeof(vec3) * builder->pos_capacity);
-
-        builder->uv_count = 0;
-        builder->uv_capacity = DEFAULT_CAPACITY;
-        builder->uvs = malloc(sizeof(TextureCoord) * builder->pos_capacity);
-
-        builder->vertex_capacity = DEFAULT_CAPACITY;
-        builder->mesh.num_vertices = 0;
-        builder->mesh.vertices = malloc(sizeof(Vertex) * builder->vertex_capacity);
-
-        builder->index_capacity = DEFAULT_CAPACITY;
-        builder->mesh.num_indices = 0;
-        builder->mesh.indices = malloc(sizeof(Vertex) * builder->index_capacity);
+        builder->vertices = VertexListCreate(DEFAULT_CAPACITY);
+        builder->indices = uint32_tListCreate(DEFAULT_CAPACITY);
 
         return true;
 }
 
 void MeshBuilderFree(MeshBuilder *builder) {
-        free(builder->positions);
-        free(builder->normals);
-        free(builder->uvs);
+        vec3ListFree(&builder->positions);
+        vec3ListFree(&builder->normals);
+        TextureCoordListFree(&builder->uvs);
+}
+
+Mesh MeshBuilderBuild(MeshBuilder *b) {
+        Vertex *vertices = realloc(b->vertices.data, sizeof(Vertex) * b->vertices.length);
+        uint32_t *indices = realloc(b->indices.data, sizeof(uint32_t) * b->indices.length);
+
+        return (Mesh){
+            .vertices = vertices,
+            .num_vertices = b->vertices.length,
+            .indices = indices,
+            .num_indices = b->indices.length,
+        };
 }
 
 void MeshFree(Mesh *mesh) {
@@ -70,7 +60,7 @@ bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %d\n", b->pos_count);
+                printf("Error reading vertex position %lu\n", b->positions.length);
                 return false;
         }
 
@@ -78,16 +68,10 @@ bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
         float y = strtof(y_str, NULL);
         float z = strtof(z_str, NULL);
 
-        if (b->pos_count == b->pos_capacity) {
-                b->pos_capacity *= 2;
-                b->positions = realloc(b->positions, sizeof(vec3) * b->pos_capacity);
-        }
-
-        b->positions[b->pos_count].x = x;
-        b->positions[b->pos_count].y = y;
-        b->positions[b->pos_count].z = z;
-
-        b->pos_count += 1;
+        vec3 *pos = vec3ListReserve(&b->positions);
+        pos->x = x;
+        pos->y = y;
+        pos->z = z;
 
         return true;
 }
@@ -98,7 +82,7 @@ bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %d\n", b->normal_count);
+                printf("Error reading normal position %lu\n", b->normals.length);
                 return false;
         }
 
@@ -106,22 +90,33 @@ bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
         float ny = strtof(y_str, NULL);
         float nz = strtof(z_str, NULL);
 
-        if (b->normal_count == b->normal_capacity) {
-                b->normal_capacity *= 2;
-                b->normals = realloc(b->normals, sizeof(vec3) * b->normal_capacity);
+        vec3 *normal = vec3ListReserve(&b->normals);
+        normal->x = nx;
+        normal->y = ny;
+        normal->z = nz;
+
+        return true;
+}
+
+bool ObjHandleVertexTextureCoords(MeshBuilder *b, char *line_save) {
+        char *u_str = strtok_r(NULL, " ", &line_save);
+        char *v_str = strtok_r(NULL, " ", &line_save);
+
+        if (!u_str || !v_str) {
+                printf("Error reading vertex texture coord %lu\n", b->uvs.length);
+                return false;
         }
 
-        b->normals[b->normal_count].x = nx;
-        b->normals[b->normal_count].y = ny;
-        b->normals[b->normal_count].z = nz;
+        float u = strtof(u_str, NULL);
+        float v = strtof(v_str, NULL);
 
-        b->normal_count += 1;
+        TextureCoordListPush(&b->uvs, (TextureCoord){.u = u, .v = v});
 
         return true;
 }
 
 bool ObjHandleVertex(MeshBuilder *b, char *contents) {
-        Vertex *vertex = &b->mesh.vertices[b->mesh.num_vertices];
+        Vertex *vertex = VertexListReserve(&b->vertices);
         vertex->color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
         char *next = strtok_r(NULL, "/", &contents);
 
@@ -130,64 +125,43 @@ bool ObjHandleVertex(MeshBuilder *b, char *contents) {
                 return false;
         }
         uint32_t pos = strtoul(next, NULL, 10) - 1;
-        vertex->position = b->positions[pos];
+        vertex->position = *vec3ListGet(&b->positions, pos);
 
         next = strtok_r(NULL, "/", &contents);
         if (next && next[0] != '\0') {
                 uint32_t uv = strtoul(next, NULL, 10) - 1;
-                vertex->uv_x = b->uvs[uv].u;
-                vertex->uv_y = b->uvs[uv].v;
+                TextureCoord *coord = TextureCoordListGet(&b->uvs, uv);
+                vertex->uv_x = coord->u;
+                vertex->uv_y = coord->v;
         }
 
         next = strtok_r(NULL, "/", &contents);
         if (next && next[0] != '\0') {
                 uint32_t vn = strtoul(next, NULL, 10) - 1;
-                vertex->normal = b->normals[vn];
+                vertex->normal = *vec3ListGet(&b->normals, vn);
         }
 
         return true;
 }
 
 bool ObjHandleFaces(MeshBuilder *b, char *line_save) {
-        if (b->mesh.num_vertices + 3 >= b->vertex_capacity) {
-                b->vertex_capacity *= 2;
-                b->mesh.vertices = realloc(b->mesh.vertices, sizeof(Vertex) * b->vertex_capacity);
-        }
-
-        if (b->mesh.num_indices + 3 >= b->index_capacity) {
-                b->index_capacity *= 2;
-                b->mesh.indices = realloc(b->mesh.indices, sizeof(uint32_t) * b->vertex_capacity);
-        }
-
         for (uint32_t i = 0; i < 3; i += 1) {
                 char *vertex = strtok_r(NULL, " ", &line_save);
 
                 ObjHandleVertex(b, vertex);
-                b->mesh.num_vertices += 1;
-
-                b->mesh.indices[b->mesh.num_indices] = b->mesh.num_indices;
-                b->mesh.num_indices += 1;
+                uint32_tListPush(&b->indices, b->indices.length);
         }
 
         return true;
 }
 
 bool LoadObjFromFile(Mesh *mesh, const char *filename) {
-        FILE *f = fopen(filename, "rb");
-
-        if (!f) {
+        size_t filesize;
+        char *data = ReadFile(filename, &filesize);
+        if (!data) {
                 printf("Failed to open file %s\n", filename);
                 return false;
         }
-
-        fseek(f, 0, SEEK_END);
-        size_t filesize = ftell(f);
-
-        fseek(f, 0, SEEK_SET);
-        char *data = malloc(filesize);
-
-        fread(data, filesize, 1, f);
-        fclose(f);
 
         MeshBuilder builder;
         MeshBuilderCreate(&builder);
@@ -201,7 +175,7 @@ bool LoadObjFromFile(Mesh *mesh, const char *filename) {
 
                 if (!token) {
                         printf("Error parsing %s.\n", filename);
-
+                        free(data);
                         return false;
                 }
 
@@ -210,21 +184,21 @@ bool LoadObjFromFile(Mesh *mesh, const char *filename) {
                 } else if (strcmp(token, "vn") == 0) {
                         ObjHandleVertexNormals(&builder, line_save);
                 } else if (strcmp(token, "vt") == 0) {
-                        // todo: uvs
+                        ObjHandleVertexTextureCoords(&builder, line_save);
                 } else if (strcmp(token, "f") == 0) {
                         ObjHandleFaces(&builder, line_save);
-                } else {
+                } else if (token[0] != '#') {
+                        // This line is not a comment, print token for debugging purposes
                         printf("Unknown token for line \"%s\"\n", token);
                 }
 
                 line = strtok_r(NULL, "\n", &save);
         }
 
-        printf("num vertex positions: %d\n", builder.pos_count);
-
         free(data);
+        *mesh = MeshBuilderBuild(&builder);
+
         MeshBuilderFree(&builder);
-        *mesh = builder.mesh;
 
         return true;
 }

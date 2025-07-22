@@ -884,20 +884,6 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
-        // Vertex vertices[4] = {
-        //     {.position = {0.5f, -0.5f, 0.0f}, .color = {0.0f, 0.0f, 0.0f, 1.0f}},
-        //     {.position = {0.5f, 0.5f, 0.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}},
-        //     {.position = {-0.5f, -0.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}},
-        //     {.position = {-0.5f, 0.5f, 0.0f}, .color = {0.0f, 1.0f, 0.0f, 1.0f}},
-        // };
-        // uint32_t indices[6] = {0, 1, 2, 2, 1, 3};
-        // Mesh rectangle = {
-        //     .vertices = vertices,
-        //     .num_vertices = 4,
-        //     .indices = indices,
-        //     .num_indices = 6,
-        // };
-
         LoadFromFile(&g_Mesh, "../assets/objs/stone-golem.obj");
         mesh_buffer_create(&g_Mesh, &g_RectangleMesh);
 

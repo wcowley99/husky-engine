@@ -22,5 +22,13 @@ typedef struct {
 
 void MeshFree(Mesh *mesh);
 
+typedef struct {
+        float u;
+        float v;
+} TextureCoord;
+
+IMPL_LIST_DEFINITION(TextureCoord)
+IMPL_LIST_DEFINITION(Vertex)
+
 bool LoadObjFromFile(Mesh *mesh, const char *filename);
 bool LoadFromFile(Mesh *mesh, const char *filename);

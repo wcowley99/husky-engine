@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util.h"
+
 typedef union {
         struct {
                 float x, y, z;
@@ -9,6 +11,8 @@ typedef union {
         };
         float elements[3];
 } vec3;
+
+IMPL_LIST_DEFINITION(vec3)
 
 typedef union {
         struct {

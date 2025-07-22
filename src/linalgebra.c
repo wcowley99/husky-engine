@@ -1,7 +1,11 @@
 #include "linalgebra.h"
 
+#include "util.h"
+
 #include <math.h>
 #include <stdio.h>
+
+IMPL_LIST_OPERATIONS(vec3)
 
 float to_radians(float degrees) { return degrees * MATH_PI / 180.0f; }
 
