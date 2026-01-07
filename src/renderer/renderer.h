@@ -1,7 +1,7 @@
 #pragma once
 
-#include "linalgebra.h"
-#include "loader.h"
+#include "common/linalgebra.h"
+#include "model/model.h"
 
 #include <SDL3/SDL.h>
 
@@ -210,6 +210,7 @@ void graphics_pipeline_destroy(GraphicsPipeline *pipeline);
 
 bool swapchain_create();
 void swapchain_destroy();
+void SwapchainRecreate();
 
 bool swapchain_next_frame();
 

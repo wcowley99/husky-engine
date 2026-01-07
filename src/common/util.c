@@ -1,14 +1,14 @@
 #include "util.h"
 
+#include <errno.h>
 #include <stdio.h>
-
-IMPL_LIST_OPERATIONS(uint32_t)
+#include <string.h>
 
 char *ReadFile(const char *filename, size_t *filesize) {
         FILE *f = fopen(filename, "rb");
 
         if (!f) {
-                printf("Failed to open file %s\n", filename);
+                printf("Failed to open file %s: %s\n", filename, strerror(errno));
                 return NULL;
         }
 

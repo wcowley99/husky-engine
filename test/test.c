@@ -1,4 +1,4 @@
-#include "src/linalgebra.h"
+#include "src/common/linalgebra.h"
 
 #include <stdbool.h>
 #include <stdint.h>

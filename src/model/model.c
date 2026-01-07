@@ -1,6 +1,7 @@
-#include "loader.h"
+#include "model.h"
 
-#include "util.h"
+#include "common/array.h"
+#include "common/util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,49 +10,41 @@
 const size_t DEFAULT_CAPACITY = 64;
 
 typedef struct {
-        vec3List positions;
-        vec3List normals;
-        TextureCoordList uvs;
+        vec3 *positions;
+        vec3 *normals;
+        TextureCoord *uvs;
 
-        VertexList vertices;
-        uint32_tList indices;
+        Vertex *vertices;
+        uint32_t *indices;
 } MeshBuilder;
 
-IMPL_LIST_OPERATIONS(TextureCoord)
-IMPL_LIST_OPERATIONS(Vertex)
-
 bool MeshBuilderCreate(MeshBuilder *builder) {
-        builder->positions = vec3ListCreate(DEFAULT_CAPACITY);
-        builder->normals = vec3ListCreate(DEFAULT_CAPACITY);
-        builder->uvs = TextureCoordListCreate(DEFAULT_CAPACITY);
+        builder->positions = array(vec3);
+        builder->normals = array(vec3);
+        builder->uvs = array(TextureCoord);
 
-        builder->vertices = VertexListCreate(DEFAULT_CAPACITY);
-        builder->indices = uint32_tListCreate(DEFAULT_CAPACITY);
+        builder->vertices = array(Vertex);
+        builder->indices = array(uint32_t);
 
         return true;
 }
 
 void MeshBuilderFree(MeshBuilder *builder) {
-        vec3ListFree(&builder->positions);
-        vec3ListFree(&builder->normals);
-        TextureCoordListFree(&builder->uvs);
+        array_free(builder->positions);
+        array_free(builder->normals);
+        array_free(builder->uvs);
 }
 
 Mesh MeshBuilderBuild(MeshBuilder *b) {
-        Vertex *vertices = realloc(b->vertices.data, sizeof(Vertex) * b->vertices.length);
-        uint32_t *indices = realloc(b->indices.data, sizeof(uint32_t) * b->indices.length);
-
         return (Mesh){
-            .vertices = vertices,
-            .num_vertices = b->vertices.length,
-            .indices = indices,
-            .num_indices = b->indices.length,
+            .vertices = b->vertices,
+            .indices = b->indices,
         };
 }
 
 void MeshFree(Mesh *mesh) {
-        free(mesh->indices);
-        free(mesh->vertices);
+        array_free(mesh->vertices);
+        array_free(mesh->indices);
 }
 
 bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
@@ -60,7 +53,7 @@ bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %lu\n", b->positions.length);
+                printf("Error reading vertex position %lu\n", array_length(b->positions));
                 return false;
         }
 
@@ -68,10 +61,8 @@ bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
         float y = strtof(y_str, NULL);
         float z = strtof(z_str, NULL);
 
-        vec3 *pos = vec3ListReserve(&b->positions);
-        pos->x = x;
-        pos->y = y;
-        pos->z = z;
+        vec3 pos = (vec3){x, y, z};
+        array_append(b->positions, pos);
 
         return true;
 }
@@ -82,7 +73,7 @@ bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
         char *z_str = strtok_r(NULL, " ", &line_save);
 
         if (!x_str || !y_str || !z_str) {
-                printf("Error reading normal position %lu\n", b->normals.length);
+                printf("Error reading normal position %lu\n", array_length(b->normals));
                 return false;
         }
 
@@ -90,10 +81,8 @@ bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
         float ny = strtof(y_str, NULL);
         float nz = strtof(z_str, NULL);
 
-        vec3 *normal = vec3ListReserve(&b->normals);
-        normal->x = nx;
-        normal->y = ny;
-        normal->z = nz;
+        vec3 normal = (vec3){nx, ny, nz};
+        array_append(b->normals, normal);
 
         return true;
 }
@@ -103,21 +92,22 @@ bool ObjHandleVertexTextureCoords(MeshBuilder *b, char *line_save) {
         char *v_str = strtok_r(NULL, " ", &line_save);
 
         if (!u_str || !v_str) {
-                printf("Error reading vertex texture coord %lu\n", b->uvs.length);
+                printf("Error reading vertex texture coord %lu\n", array_length(b->uvs));
                 return false;
         }
 
         float u = strtof(u_str, NULL);
         float v = strtof(v_str, NULL);
 
-        TextureCoordListPush(&b->uvs, (TextureCoord){.u = u, .v = v});
+        TextureCoord tex = (TextureCoord){.u = u, .v = v};
+        array_append(b->uvs, tex);
 
         return true;
 }
 
 bool ObjHandleVertex(MeshBuilder *b, char *contents) {
-        Vertex *vertex = VertexListReserve(&b->vertices);
-        vertex->color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
+        Vertex v = {0};
+        v.color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
         char *next = strtok_r(NULL, "/", &contents);
 
         if (!next) {
@@ -125,21 +115,23 @@ bool ObjHandleVertex(MeshBuilder *b, char *contents) {
                 return false;
         }
         uint32_t pos = strtoul(next, NULL, 10) - 1;
-        vertex->position = *vec3ListGet(&b->positions, pos);
+        v.position = b->positions[pos];
 
         next = strtok_r(NULL, "/", &contents);
         if (next && next[0] != '\0') {
                 uint32_t uv = strtoul(next, NULL, 10) - 1;
-                TextureCoord *coord = TextureCoordListGet(&b->uvs, uv);
-                vertex->uv_x = coord->u;
-                vertex->uv_y = coord->v;
+                TextureCoord *coord = &b->uvs[uv];
+                v.uv_x = coord->u;
+                v.uv_y = coord->v;
         }
 
         next = strtok_r(NULL, "/", &contents);
         if (next && next[0] != '\0') {
                 uint32_t vn = strtoul(next, NULL, 10) - 1;
-                vertex->normal = *vec3ListGet(&b->normals, vn);
+                v.normal = b->normals[vn];
         }
+
+        array_append(b->vertices, v);
 
         return true;
 }
@@ -149,7 +141,7 @@ bool ObjHandleFaces(MeshBuilder *b, char *line_save) {
                 char *vertex = strtok_r(NULL, " ", &line_save);
 
                 ObjHandleVertex(b, vertex);
-                uint32_tListPush(&b->indices, b->indices.length);
+                array_append(b->indices, array_length(b->indices));
         }
 
         return true;

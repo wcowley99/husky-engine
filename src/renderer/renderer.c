@@ -1,5 +1,7 @@
 #include "renderer.h"
 
+#include "common/array.h"
+
 #include "colored_triangle_frag.h"
 #include "colored_triangle_mesh_vert.h"
 #include "gradient2_comp.h"
@@ -100,8 +102,8 @@ void buffer_destroy(Buffer *buffer) {
 }
 
 bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
-        const size_t vertex_buffer_size = sizeof(Vertex) * mesh->num_vertices;
-        const size_t index_buffer_size = sizeof(uint32_t) * mesh->num_indices;
+        const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
+        const size_t index_buffer_size = sizeof(uint32_t) * array_length(mesh->indices);
 
         buffer_create(vertex_buffer_size,
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -365,6 +367,8 @@ void frame_resources_destroy(FrameResources *f) {
 
         vkDestroyCommandPool(g_Device, f->pool, NULL);
 
+        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->global_descriptors);
+
         buffer_destroy(&f->camera_uniform);
 }
 
@@ -603,13 +607,15 @@ bool swapchain_create() {
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, g_Surface, &capabilities);
 
+        VkExtent2D extent = {g_Width, g_Height};
+
         VkSwapchainCreateInfoKHR create_info = {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .surface = g_Surface,
             .presentMode = VK_PRESENT_MODE_FIFO_KHR,
             .minImageCount = capabilities.minImageCount + 1,
             .imageFormat = g_SwapchainFormat,
-            .imageExtent = capabilities.currentExtent,
+            .imageExtent = extent,
             .imageArrayLayers = 1,
             .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -622,9 +628,6 @@ bool swapchain_create() {
 
         VK_EXPECT(vkCreateSwapchainKHR(g_Device, &create_info, NULL, &g_Swapchain));
 
-        g_Width = capabilities.currentExtent.width;
-        g_Height = capabilities.currentExtent.height;
-
         vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_SwapchainImageCount, NULL);
 
         VkImage *images = malloc(sizeof(VkImage) * g_SwapchainImageCount);
@@ -633,9 +636,8 @@ bool swapchain_create() {
         g_SwapchainImages = malloc(sizeof(Image) * g_SwapchainImageCount);
         g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
-                EXPECT(image_create(images[i], capabilities.currentExtent, g_SwapchainFormat,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_ASPECT_COLOR_BIT,
-                                    &g_SwapchainImages[i]));
+                EXPECT(image_create(images[i], extent, g_SwapchainFormat, VK_IMAGE_LAYOUT_UNDEFINED,
+                                    VK_IMAGE_ASPECT_COLOR_BIT, &g_SwapchainImages[i]));
                 EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
@@ -650,6 +652,13 @@ void swapchain_destroy() {
         free(g_SwapchainImages);
         free(g_SwapchainFrameResources);
         vkDestroySwapchainKHR(g_Device, g_Swapchain, NULL);
+}
+
+void SwapchainRecreate() {
+        vkDeviceWaitIdle(g_Device);
+
+        swapchain_destroy();
+        swapchain_create();
 }
 
 bool swapchain_next_frame() {
@@ -786,6 +795,14 @@ bool RendererInit(RendererCreateInfo *c) {
                 return false;
         }
 
+        int w, h;
+        SDL_GetWindowSize(g_Window, &w, &h);
+
+        printf("w: %d, h: %d\n", w, h);
+
+        g_Width = w;
+        g_Height = h;
+
         EXPECT(create_instance(c));
         EXPECT(create_debug_messenger());
         EXPECT(create_surface());
@@ -884,7 +901,7 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
-        LoadFromFile(&g_Mesh, "../assets/objs/stone-golem.obj");
+        LoadFromFile(&g_Mesh, "assets/objs/stone-golem.obj");
         mesh_buffer_create(&g_Mesh, &g_RectangleMesh);
 
         return true;
@@ -899,16 +916,16 @@ void RendererShutdown() {
         graphics_pipeline_destroy(&g_TrianglePipeline);
         graphics_pipeline_destroy(&g_MeshPipeline);
 
-        descriptor_allocator_destroy(&g_DescriptorAllocator);
-        vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
-        vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
-
         allocated_image_destroy(&g_IntermediateImage);
         allocated_image_destroy(&g_DepthImage);
         mesh_buffer_destroy(&g_RectangleMesh);
 
         swapchain_destroy();
         immediate_command_destroy(&g_ImmediateCommand);
+
+        descriptor_allocator_destroy(&g_DescriptorAllocator);
+        vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
+        vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
 
         vmaDestroyAllocator(g_Allocator);
 
@@ -1069,13 +1086,28 @@ void DrawCommandEndFrame() {
             .pWaitSemaphores = &g_CurrentFrameResources->render_semaphore,
             .pImageIndices = &g_CurrentSwapchainImageIndex,
         };
-        vkQueuePresentKHR(g_GraphicsQueue, &present_info);
+        VkResult result = vkQueuePresentKHR(g_GraphicsQueue, &present_info);
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+                printf("out of date/suboptimal swapchain.\n");
+                SwapchainRecreate();
+        }
 
         // Refresh the window
         SDL_UpdateWindowSurface(g_Window);
 }
 
 void RendererDraw() {
+        int w, h;
+        SDL_GetWindowSize(g_Window, &w, &h);
+
+        if (w != g_Width || h != g_Height) {
+                printf("Resizing Swapchain: w = %d, h = %d\n", w, h);
+                g_Width = w;
+                g_Height = h;
+                SwapchainRecreate();
+        }
+
         if (!DrawCommandBeginFrame()) {
                 return;
         }
@@ -1127,7 +1159,8 @@ void RendererDraw() {
         DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
         DrawCommandBindIndexBuffer(&g_RectangleMesh);
 
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, g_Mesh.num_indices, 1, 0, 0, 0);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Mesh.indices), 1, 0, 0,
+                         0);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 
@@ -1430,6 +1463,7 @@ bool create_descriptor_pool(VkDescriptorPoolSize *sizes, uint32_t count, VkDescr
             .pPoolSizes = sizes,
             .poolSizeCount = count,
             .maxSets = sum,
+            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         };
 
         VK_EXPECT(vkCreateDescriptorPool(g_Device, &create_info, NULL, pool));

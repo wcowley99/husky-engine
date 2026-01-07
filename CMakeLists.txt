@@ -69,14 +69,14 @@ target_compile_definitions(VulkanMemoryAllocator PUBLIC
 )
 
 add_library(engine-lib
-  src/linalgebra.c
-  src/linalgebra.h
-  src/loader.c
-  src/loader.h
-  src/renderer.c
-  src/renderer.h
-  src/util.h
-  src/util.c
+  src/common/linalgebra.c
+
+  src/model/model.c
+
+  src/renderer/renderer.c
+
+  src/common/util.c
+  src/common/array.c
   ${SHADER_HEADERS}
 )
 
@@ -94,6 +94,8 @@ target_include_directories(engine-lib PUBLIC
   external/VulkanMemoryAllocator/include
   external/volk
   ${CMAKE_BINARY_DIR}
+
+  src
 )
 
 # Build main

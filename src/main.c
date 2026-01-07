@@ -1,4 +1,4 @@
-#include "renderer.h"
+#include "renderer/renderer.h"
 
 #include <SDL3/SDL.h>
 
@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
         RendererCreateInfo create_info = {
             .width = 1920,
             .height = 1080,
-            .title = "Mordor",
+            .title = "Civ Game",
             .debug = true,
         };
         if (!RendererInit(&create_info)) {

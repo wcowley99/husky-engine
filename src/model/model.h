@@ -1,6 +1,6 @@
 #pragma once
 
-#include "linalgebra.h"
+#include "common/linalgebra.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,8 +16,6 @@ typedef struct {
 typedef struct {
         Vertex *vertices;
         uint32_t *indices;
-        uint32_t num_vertices;
-        uint32_t num_indices;
 } Mesh;
 
 void MeshFree(Mesh *mesh);
@@ -26,9 +24,6 @@ typedef struct {
         float u;
         float v;
 } TextureCoord;
-
-IMPL_LIST_DEFINITION(TextureCoord)
-IMPL_LIST_DEFINITION(Vertex)
 
 bool LoadObjFromFile(Mesh *mesh, const char *filename);
 bool LoadFromFile(Mesh *mesh, const char *filename);
