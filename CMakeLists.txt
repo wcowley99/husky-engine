@@ -73,7 +73,12 @@ add_library(engine-lib
 
   src/model/model.c
 
+  src/renderer/buffer.c
+  src/renderer/command.c
+  src/renderer/descriptors.c
+  src/renderer/image.c
   src/renderer/renderer.c
+  src/renderer/vkb.c
 
   src/common/util.c
   src/common/array.c

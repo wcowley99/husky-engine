@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-const size_t DEFAULT_CAPACITY = 64;
-
 typedef struct {
         vec3 *positions;
         vec3 *normals;

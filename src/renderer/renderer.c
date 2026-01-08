@@ -1,5 +1,10 @@
 #include "renderer.h"
 
+#include "buffer.h"
+#include "command.h"
+#include "descriptors.h"
+#include "image.h"
+
 #include "common/array.h"
 
 #include "colored_triangle_frag.h"
@@ -7,9 +12,6 @@
 #include "gradient2_comp.h"
 
 #include <SDL3/SDL_vulkan.h>
-
-#define VOLK_IMPLEMENTATION
-#include <volk.h>
 
 #include <malloc.h>
 #include <math.h>
@@ -51,6 +53,7 @@ ImmediateCommand g_ImmediateCommand;
 DescriptorAllocator g_DescriptorAllocator;
 
 VkDescriptorSetLayout g_GlobalDescriptorLayout;
+VkDescriptorSetLayout g_MaterialDescriptorLayout;
 
 AllocatedImage g_IntermediateImage;
 AllocatedImage g_DepthImage;
@@ -74,42 +77,20 @@ const vec3 g_UpVector = {0.0f, 1.0f, 0.0f};
 uint32_t g_Width;
 uint32_t g_Height;
 
-bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
-        VkBufferCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = size,
-            .usage = flags,
-        };
+AllocatedImage g_ErrorTexture;
 
-        VmaAllocationCreateInfo alloc_info = {
-            .usage = usage,
-            .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        };
-
-        VkResult result = vmaCreateBuffer(g_Allocator, &create_info, &alloc_info, &buffer->buffer,
-                                          &buffer->allocation, &buffer->info);
-
-        if (result != VK_SUCCESS) {
-                printf("Failed to create buffer.\n");
-                return false;
-        } else {
-                return true;
-        }
-}
-
-void buffer_destroy(Buffer *buffer) {
-        vmaDestroyBuffer(g_Allocator, buffer->buffer, buffer->allocation);
-}
+VkSampler g_LinearSampler;
+VkSampler g_NearestSampler;
 
 bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
         const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
         const size_t index_buffer_size = sizeof(uint32_t) * array_length(mesh->indices);
 
-        buffer_create(vertex_buffer_size,
+        buffer_create(g_Allocator, vertex_buffer_size,
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                       VMA_MEMORY_USAGE_GPU_ONLY, &buffer->vertex);
-        buffer_create(index_buffer_size,
+        buffer_create(g_Allocator, index_buffer_size,
                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VMA_MEMORY_USAGE_GPU_ONLY, &buffer->index);
 
@@ -120,8 +101,8 @@ bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
         buffer->vertex_address = vkGetBufferDeviceAddress(g_Device, &address_info);
 
         Buffer staging_buffer;
-        buffer_create(vertex_buffer_size + index_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                      VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
+        buffer_create(g_Allocator, vertex_buffer_size + index_buffer_size,
+                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
         vmaCopyMemoryToAllocation(g_Allocator, mesh->vertices, staging_buffer.allocation, 0,
                                   vertex_buffer_size);
         vmaCopyMemoryToAllocation(g_Allocator, mesh->indices, staging_buffer.allocation,
@@ -145,159 +126,6 @@ bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
 void mesh_buffer_destroy(MeshBuffer *buffer) {
         buffer_destroy(&buffer->vertex);
         buffer_destroy(&buffer->index);
-}
-
-///////////////////////////////////////
-/// Image
-///////////////////////////////////////
-
-bool image_create(VkImage vk_image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
-                  VkImageAspectFlags flags, Image *image) {
-        image->image = vk_image;
-
-        image->extent.width = extent.width;
-        image->extent.height = extent.height;
-        image->extent.depth = 1;
-
-        image->format = format;
-        image->layout = layout;
-
-        VkComponentMapping mapping = {
-            .r = VK_COMPONENT_SWIZZLE_R,
-            .g = VK_COMPONENT_SWIZZLE_G,
-            .b = VK_COMPONENT_SWIZZLE_B,
-            .a = VK_COMPONENT_SWIZZLE_A,
-        };
-
-        VkImageSubresourceRange range = {
-            .aspectMask = flags,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-        };
-
-        VkImageViewCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = vk_image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = format,
-            .components = mapping,
-            .subresourceRange = range,
-        };
-
-        VK_EXPECT(vkCreateImageView(g_Device, &create_info, NULL, &image->image_view));
-        return true;
-}
-
-void image_destroy(Image *image) { vkDestroyImageView(g_Device, image->image_view, NULL); }
-
-void image_transition(Image *image, VkCommandBuffer command, VkImageLayout layout) {
-        VkImageAspectFlags mask = (layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
-                                      ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                      : VK_IMAGE_ASPECT_COLOR_BIT;
-
-        VkImageSubresourceRange range = {
-            .aspectMask = mask,
-            .baseMipLevel = 0,
-            .levelCount = VK_REMAINING_MIP_LEVELS,
-            .baseArrayLayer = 0,
-            .layerCount = VK_REMAINING_ARRAY_LAYERS,
-        };
-
-        VkImageMemoryBarrier2 barrier = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-            .oldLayout = image->layout,
-            .newLayout = layout,
-            .subresourceRange = range,
-            .image = image->image,
-        };
-
-        VkDependencyInfo depInfo = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                    .imageMemoryBarrierCount = 1,
-                                    .pImageMemoryBarriers = &barrier};
-
-        vkCmdPipelineBarrier2(command, &depInfo);
-
-        image->layout = layout;
-}
-
-void image_blit(VkCommandBuffer command, Image *src, Image *dst) {
-        VkImageBlit2 blit = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-            .srcOffsets =
-                {{0}, {.x = src->extent.width, .y = src->extent.height, .z = src->extent.depth}},
-            .dstOffsets =
-                {{0}, {.x = dst->extent.width, .y = dst->extent.height, .z = dst->extent.depth}},
-            .srcSubresource =
-                {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                    .mipLevel = 0,
-                },
-            .dstSubresource =
-                {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                    .mipLevel = 0,
-                },
-        };
-
-        VkBlitImageInfo2 blit_info = {
-            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-            .srcImage = src->image,
-            .srcImageLayout = src->layout,
-            .dstImage = dst->image,
-            .dstImageLayout = dst->layout,
-            .filter = VK_FILTER_LINEAR,
-            .regionCount = 1,
-            .pRegions = &blit,
-        };
-
-        vkCmdBlitImage2(command, &blit_info);
-}
-
-bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image) {
-        VkImageCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            .imageType = VK_IMAGE_TYPE_2D,
-            .format = info->format,
-            .extent = info->extent,
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .samples = VK_SAMPLE_COUNT_1_BIT,
-            .tiling = VK_IMAGE_TILING_OPTIMAL,
-            .usage = info->usage_flags,
-        };
-
-        VmaAllocationCreateInfo alloc_info = {
-            .usage = info->memory_usage,
-            .requiredFlags = info->memory_props,
-        };
-
-        VkImage raw_image;
-        VK_EXPECT(vmaCreateImage(g_Allocator, &create_info, &alloc_info, &raw_image,
-                                 &image->allocation, NULL));
-
-        VkExtent2D extent = {
-            .width = info->extent.width,
-            .height = info->extent.height,
-        };
-        EXPECT(image_create(raw_image, extent, info->format, VK_IMAGE_LAYOUT_UNDEFINED,
-                            info->aspect_flags, &image->image));
-
-        return true;
-}
-
-void allocated_image_destroy(AllocatedImage *image) {
-        image_destroy(&image->image);
-        vmaDestroyImage(g_Allocator, image->image.image, image->allocation);
 }
 
 ///////////////////////////////////////
@@ -335,8 +163,10 @@ bool frame_resources_create(FrameResources *f) {
 
         EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout, 1,
                                              &f->global_descriptors));
+        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_MaterialDescriptorLayout, 1,
+                                             &f->mat_descriptors));
 
-        EXPECT(buffer_create(sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        EXPECT(buffer_create(g_Allocator, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
 
         VkDescriptorBufferInfo camera_info = {
@@ -368,6 +198,7 @@ void frame_resources_destroy(FrameResources *f) {
         vkDestroyCommandPool(g_Device, f->pool, NULL);
 
         vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->global_descriptors);
+        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
 }
@@ -635,9 +466,20 @@ bool swapchain_create() {
 
         g_SwapchainImages = malloc(sizeof(Image) * g_SwapchainImageCount);
         g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
+
+        VkExtent3D image_extent = {extent.width, extent.height, 1};
+
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
-                EXPECT(image_create(images[i], extent, g_SwapchainFormat, VK_IMAGE_LAYOUT_UNDEFINED,
-                                    VK_IMAGE_ASPECT_COLOR_BIT, &g_SwapchainImages[i]));
+                ImageCreateInfo create_info = {
+                    .device = g_Device,
+                    .image = images[i],
+                    .extent = image_extent,
+                    .format = g_SwapchainFormat,
+                    .layout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
+                };
+
+                EXPECT(image_create(&create_info, &g_SwapchainImages[i]));
                 EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
@@ -646,7 +488,7 @@ bool swapchain_create() {
 
 void swapchain_destroy() {
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
-                image_destroy(&g_SwapchainImages[i]);
+                image_destroy(&g_SwapchainImages[i], g_Device);
                 frame_resources_destroy(&g_SwapchainFrameResources[i]);
         }
         free(g_SwapchainImages);
@@ -677,104 +519,6 @@ bool swapchain_next_frame() {
         g_CurrentSwapchainImage = &g_SwapchainImages[g_CurrentSwapchainImageIndex];
 
         return true;
-}
-
-///////////////////////////////////////
-/// Descriptor Allocator
-///////////////////////////////////////
-
-bool descriptor_allocator_create(DescriptorAllocator *allocator) {
-        VkDescriptorPoolSize pool_sizes[] = {
-            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
-            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 4},
-        };
-        EXPECT(create_descriptor_pool(pool_sizes, sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize),
-                                      &allocator->pool));
-
-        return true;
-}
-
-void descriptor_allocator_destroy(DescriptorAllocator *allocator) {
-        vkDestroyDescriptorPool(g_Device, allocator->pool, NULL);
-}
-
-void descriptor_allocator_clear(DescriptorAllocator *allocator) {
-        vkResetDescriptorPool(g_Device, allocator->pool, 0);
-}
-
-bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDescriptorSetLayout *layouts,
-                                   uint32_t count, VkDescriptorSet *sets) {
-        VkDescriptorSetAllocateInfo alloc_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = allocator->pool,
-            .pSetLayouts = layouts,
-            .descriptorSetCount = count,
-        };
-
-        VK_EXPECT(vkAllocateDescriptorSets(g_Device, &alloc_info, sets));
-        return true;
-}
-
-///////////////////////////////////////
-/// Immediate Command
-///////////////////////////////////////
-
-bool immediate_command_create(ImmediateCommand *command) {
-        VkFenceCreateInfo fence_info = {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .flags = 0,
-        };
-        VK_EXPECT(vkCreateFence(g_Device, &fence_info, NULL, &command->fence));
-
-        VkCommandPoolCreateInfo command_pool_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .queueFamilyIndex = g_QueueFamilyIndex,
-            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        };
-        VK_EXPECT(vkCreateCommandPool(g_Device, &command_pool_info, NULL, &command->pool));
-
-        VkCommandBufferAllocateInfo alloc_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandBufferCount = 1,
-            .commandPool = command->pool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        };
-        VK_EXPECT(vkAllocateCommandBuffers(g_Device, &alloc_info, &command->command));
-
-        return true;
-}
-
-void immediate_command_destroy(ImmediateCommand *command) {
-        vkDestroyCommandPool(g_Device, command->pool, NULL);
-        vkDestroyFence(g_Device, command->fence, NULL);
-}
-
-void immediate_command_begin(ImmediateCommand *command) {
-        VkCommandBufferBeginInfo begin = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        };
-        vkBeginCommandBuffer(command->command, &begin);
-}
-
-void immediate_command_end(ImmediateCommand *command) {
-        vkEndCommandBuffer(command->command);
-
-        VkCommandBufferSubmitInfo cmd_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .commandBuffer = command->command,
-        };
-
-        VkSubmitInfo2 submit_info = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-            .pCommandBufferInfos = &cmd_info,
-            .commandBufferInfoCount = 1,
-        };
-        vkQueueSubmit2(g_GraphicsQueue, 1, &submit_info, command->fence);
-        vkWaitForFences(g_Device, 1, &command->fence, VK_TRUE, 1000000000);
-
-        vkResetFences(g_Device, 1, &command->fence);
-        vkResetCommandPool(g_Device, command->pool, 0);
 }
 
 ///////////////////////////////////////
@@ -824,6 +568,8 @@ bool RendererInit(RendererCreateInfo *c) {
             .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
             .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+            .allocator = g_Allocator,
+            .device = g_Device,
         };
 
         AllocatedImageCreateInfo depth_image_info = {
@@ -838,6 +584,8 @@ bool RendererInit(RendererCreateInfo *c) {
             .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
             .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
             .usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            .allocator = g_Allocator,
+            .device = g_Device,
         };
 
         EXPECT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
@@ -847,7 +595,8 @@ bool RendererInit(RendererCreateInfo *c) {
 
         EXPECT(swapchain_create());
 
-        EXPECT(immediate_command_create(&g_ImmediateCommand));
+        EXPECT(immediate_command_create(g_Device, g_QueueFamilyIndex, g_GraphicsQueue,
+                                        &g_ImmediateCommand));
 
         uint32_t sizes[] = {sizeof(float) * 16};
         ComputePipelineInfo pipeline_info = {
@@ -860,20 +609,6 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(compute_pipeline_create(&pipeline_info, &g_GradientPipeline));
 
-        // GraphicsPipelineCreateInfo graphics_pipeline_info = {
-        //     .vertex_shader = (const uint32_t *)colored_triangle_vert_file,
-        //     .vertex_shader_size = colored_triangle_vert_size / 4,
-        //     .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
-        //     .fragment_shader_size = colored_triangle_frag_size / 4,
-        //     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        //     .polygon_mode = VK_POLYGON_MODE_FILL,
-        //     .cull_mode = VK_CULL_MODE_NONE,
-        //     .front_face = VK_FRONT_FACE_CLOCKWISE,
-        //     .color_attachment_format = g_IntermediateImage.image.format,
-        //     .depth_attachment_format = VK_FORMAT_UNDEFINED,
-        // };
-        // EXPECT(graphics_pipeline_create(&graphics_pipeline_info, &g_TrianglePipeline));
-
         VkPushConstantRange push_constants[] = {
             {
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
@@ -881,9 +616,11 @@ bool RendererInit(RendererCreateInfo *c) {
                 .size = sizeof(MeshPushConstants),
             },
         };
+
+        VkDescriptorSetLayout layouts[] = {g_GlobalDescriptorLayout, g_MaterialDescriptorLayout};
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
-            .descriptors = &g_GlobalDescriptorLayout,
-            .num_descriptors = 1,
+            .descriptors = layouts,
+            .num_descriptors = 2,
             .push_constants = push_constants,
             .num_push_constants = 1,
             .vertex_shader = (const uint32_t *)colored_triangle_mesh_vert_file,
@@ -901,6 +638,8 @@ bool RendererInit(RendererCreateInfo *c) {
         };
         EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
 
+        EXPECT(init_textures());
+
         LoadFromFile(&g_Mesh, "assets/objs/stone-golem.obj");
         mesh_buffer_create(&g_Mesh, &g_RectangleMesh);
 
@@ -916,8 +655,12 @@ void RendererShutdown() {
         graphics_pipeline_destroy(&g_TrianglePipeline);
         graphics_pipeline_destroy(&g_MeshPipeline);
 
-        allocated_image_destroy(&g_IntermediateImage);
-        allocated_image_destroy(&g_DepthImage);
+        allocated_image_destroy(&g_ErrorTexture, g_Device);
+        vkDestroySampler(g_Device, g_LinearSampler, NULL);
+        vkDestroySampler(g_Device, g_NearestSampler, NULL);
+
+        allocated_image_destroy(&g_IntermediateImage, g_Device);
+        allocated_image_destroy(&g_DepthImage, g_Device);
         mesh_buffer_destroy(&g_RectangleMesh);
 
         swapchain_destroy();
@@ -926,6 +669,7 @@ void RendererShutdown() {
         descriptor_allocator_destroy(&g_DescriptorAllocator);
         vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
         vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
+        vkDestroyDescriptorSetLayout(g_Device, g_MaterialDescriptorLayout, NULL);
 
         vmaDestroyAllocator(g_Allocator);
 
@@ -1033,6 +777,34 @@ void DrawCommandSetCameraData(CameraData *camera) {
         vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 g_ActiveGraphicsPipeline->layout, 0, 1,
                                 &g_CurrentFrameResources->global_descriptors, 0, NULL);
+}
+
+void DrawCommandBindTexture(Image *image) {
+        if (!g_ActiveGraphicsPipeline) {
+                printf("No currently bound graphics pipeline!");
+                return;
+        }
+
+        VkDescriptorImageInfo image_info = {
+            .sampler = g_LinearSampler,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .imageView = image->image_view,
+        };
+
+        VkWriteDescriptorSet write_set = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .dstSet = g_CurrentFrameResources->mat_descriptors,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &image_info,
+        };
+
+        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+
+        vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                g_ActiveGraphicsPipeline->layout, 1, 1,
+                                &g_CurrentFrameResources->mat_descriptors, 0, NULL);
 }
 
 void DrawCommandSetGraphicsPushConstants(size_t offset, size_t size, void *data) {
@@ -1157,8 +929,9 @@ void RendererDraw() {
             .vertex_address = g_RectangleMesh.vertex_address,
         };
         DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
-        DrawCommandBindIndexBuffer(&g_RectangleMesh);
+        DrawCommandBindTexture(&g_ErrorTexture.image);
 
+        DrawCommandBindIndexBuffer(&g_RectangleMesh);
         vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Mesh.indices), 1, 0, 0,
                          0);
 
@@ -1174,6 +947,45 @@ void MoveCamera(vec3 delta) {
         g_CameraPosition = vec3_add(g_CameraPosition, relative);
 }
 
+bool init_textures() {
+        uint32_t checkerboard[4] = {
+            0xFFFF00FF,
+            0x000000FF,
+            0xFFFF00FF,
+            0x000000FF,
+        };
+
+        AllocatedImageCreateInfo create_info = {
+            .extent = (VkExtent3D){2, 2, 1},
+            .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .usage_flags = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
+
+            .device = g_Device,
+            .allocator = g_Allocator,
+
+            .data = checkerboard,
+            .imm = &g_ImmediateCommand,
+        };
+        EXPECT(allocated_image_create(&create_info, &g_ErrorTexture));
+
+        VkSamplerCreateInfo sampler_info = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+
+        vkCreateSampler(g_Device, &sampler_info, NULL, &g_LinearSampler);
+
+        sampler_info.magFilter = VK_FILTER_NEAREST;
+        sampler_info.minFilter = VK_FILTER_NEAREST;
+
+        vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
+
+        return true;
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -1184,7 +996,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
 }
 
 bool init_descriptors() {
-        EXPECT(descriptor_allocator_create(&g_DescriptorAllocator));
+        EXPECT(descriptor_allocator_create(g_Device, &g_DescriptorAllocator));
 
         VkDescriptorSetLayoutBinding bindings[] = {
             {
@@ -1207,6 +1019,14 @@ bool init_descriptors() {
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         }};
         EXPECT(create_descriptor_layout(global_descriptor_bindings, 1, &g_GlobalDescriptorLayout));
+
+        VkDescriptorSetLayoutBinding mat_bindings[] = {{
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        }};
+        EXPECT(create_descriptor_layout(mat_bindings, 1, &g_MaterialDescriptorLayout));
 
         VkDescriptorImageInfo image_info = {
             .sampler = VK_NULL_HANDLE,
@@ -1449,24 +1269,6 @@ bool create_shader_module(const uint32_t *bytes, size_t len, VkShaderModule *mod
         };
 
         VK_EXPECT(vkCreateShaderModule(g_Device, &create_info, NULL, module));
-        return true;
-}
-
-bool create_descriptor_pool(VkDescriptorPoolSize *sizes, uint32_t count, VkDescriptorPool *pool) {
-        uint32_t sum = 0;
-        for (uint32_t i = 0; i < count; i += 1) {
-                sum += sizes[i].descriptorCount;
-        }
-
-        VkDescriptorPoolCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .pPoolSizes = sizes,
-            .poolSizeCount = count,
-            .maxSets = sum,
-            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-        };
-
-        VK_EXPECT(vkCreateDescriptorPool(g_Device, &create_info, NULL, pool));
         return true;
 }
 
