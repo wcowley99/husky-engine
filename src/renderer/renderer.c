@@ -6,10 +6,7 @@
 #include "image.h"
 
 #include "common/array.h"
-
-#include "colored_triangle_frag.h"
-#include "colored_triangle_mesh_vert.h"
-#include "gradient2_comp.h"
+#include "common/util.h"
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -598,16 +595,21 @@ bool RendererInit(RendererCreateInfo *c) {
         EXPECT(immediate_command_create(g_Device, g_QueueFamilyIndex, g_GraphicsQueue,
                                         &g_ImmediateCommand));
 
+        size_t gradient_size;
+        char *gradient_comp = ReadFile("shaders/gradient2.comp.spv", &gradient_size);
+
         uint32_t sizes[] = {sizeof(float) * 16};
         ComputePipelineInfo pipeline_info = {
             .descriptors = &g_IntermediateImageDescriptorLayout,
             .num_descriptors = 1,
             .push_constant_sizes = sizes,
             .num_push_constant_sizes = 1,
-            .shader_source = (const uint32_t *)gradient2_comp_file,
-            .shader_source_size = gradient2_comp_size / 4,
+            .shader_source = (const uint32_t *)gradient_comp,
+            .shader_source_size = gradient_size / 4,
         };
         EXPECT(compute_pipeline_create(&pipeline_info, &g_GradientPipeline));
+
+        free(gradient_comp);
 
         VkPushConstantRange push_constants[] = {
             {
@@ -617,16 +619,20 @@ bool RendererInit(RendererCreateInfo *c) {
             },
         };
 
+        size_t vert_size, frag_size;
+        char *vert = ReadFile("shaders/colored_triangle_mesh.vert.spv", &vert_size);
+        char *frag = ReadFile("shaders/colored_triangle.frag.spv", &frag_size);
+
         VkDescriptorSetLayout layouts[] = {g_GlobalDescriptorLayout, g_MaterialDescriptorLayout};
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
             .descriptors = layouts,
             .num_descriptors = 2,
             .push_constants = push_constants,
             .num_push_constants = 1,
-            .vertex_shader = (const uint32_t *)colored_triangle_mesh_vert_file,
-            .vertex_shader_size = colored_triangle_mesh_vert_size / 4,
-            .fragment_shader = (const uint32_t *)colored_triangle_frag_file,
-            .fragment_shader_size = colored_triangle_frag_size / 4,
+            .vertex_shader = (const uint32_t *)vert,
+            .vertex_shader_size = vert_size / 4,
+            .fragment_shader = (const uint32_t *)frag,
+            .fragment_shader_size = frag_size / 4,
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
             .polygon_mode = VK_POLYGON_MODE_FILL,
             .cull_mode = VK_CULL_MODE_BACK_BIT,

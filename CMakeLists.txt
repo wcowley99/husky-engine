@@ -8,43 +8,6 @@ project(
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if (WIN32)
-  set(HEXEMBED "${CMAKE_BINARY_DIR}/Debug/hexembed.exe")
-else()
-  set(HEXEMBED "${CMAKE_BINARY_DIR}/hexembed")
-endif()
-
-# Generate Shader Headers
-file(GLOB SHADERS CONFIGURE_DEPENDS "shaders/*")
-
-add_executable(hexembed scripts/hexembed.c)
-
-set(SHADER_HEADERS "")
-foreach(SHADER ${SHADERS})
-  message(${SHADER})
-  get_filename_component(NAME ${SHADER} NAME_WE)
-  get_filename_component(EXT ${SHADER} EXT)
-  string(REPLACE "." "" EXT "${EXT}")
-
-  set(SHADER_NAME "${NAME}_${EXT}")
-  set(SPIRV_FILE "${CMAKE_BINARY_DIR}/${SHADER_NAME}.spv")
-  set(OUTPUT_HEADER "${CMAKE_BINARY_DIR}/${SHADER_NAME}.h")
-  list(APPEND SHADER_HEADERS ${OUTPUT_HEADER})
-
-  add_custom_command(
-    OUTPUT ${OUTPUT_HEADER}
-    BYPRODUCTS ${SPIRV_FILE}
-    COMMAND glslc ${SHADER} -o ${SPIRV_FILE} && ${HEXEMBED} ${SPIRV_FILE} ${SHADER_NAME} > ${OUTPUT_HEADER}
-    DEPENDS hexembed
-    COMMENT "Generating ${OUTPUT_HEADER} from ${SHADER}"
-    VERBATIM
-  )
-endforeach()
-
-add_custom_target(generated_headers ALL
-  DEPENDS ${SHADER_HEADERS}
-)
-
 # Build Source
 find_package(Vulkan REQUIRED)
 
@@ -82,10 +45,7 @@ add_library(engine-lib
 
   src/common/util.c
   src/common/array.c
-  ${SHADER_HEADERS}
 )
-
-add_dependencies(engine-lib generated_headers)
 
 target_link_libraries(engine-lib PUBLIC
   SDL3::SDL3
