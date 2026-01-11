@@ -63,7 +63,7 @@ GraphicsPipeline g_MeshPipeline;
 
 GraphicsPipeline *g_ActiveGraphicsPipeline;
 
-Mesh g_Mesh;
+Model g_Model;
 
 MeshBuffer g_RectangleMesh;
 
@@ -646,14 +646,15 @@ bool RendererInit(RendererCreateInfo *c) {
 
         EXPECT(init_textures());
 
-        LoadFromFile(&g_Mesh, "assets/objs/stone-golem.obj");
-        mesh_buffer_create(&g_Mesh, &g_RectangleMesh);
+        g_Model = load_model("assets/objs/Tree_V10_Final.obj");
+
+        mesh_buffer_create(g_Model.meshes, &g_RectangleMesh);
 
         return true;
 }
 
 void RendererShutdown() {
-        MeshFree(&g_Mesh);
+        model_destroy(g_Model);
         // Make sure the GPU has finished all work
         vkDeviceWaitIdle(g_Device);
 
@@ -938,8 +939,8 @@ void RendererDraw() {
         DrawCommandBindTexture(&g_ErrorTexture.image);
 
         DrawCommandBindIndexBuffer(&g_RectangleMesh);
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Mesh.indices), 1, 0, 0,
-                         0);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices), 1,
+                         0, 0, 0);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 

@@ -1,6 +1,7 @@
 #include "model.h"
 
 #include "common/array.h"
+#include "common/str.h"
 #include "common/util.h"
 
 #include <stdio.h>
@@ -16,15 +17,13 @@ typedef struct {
         uint32_t *indices;
 } MeshBuilder;
 
-bool MeshBuilderCreate(MeshBuilder *builder) {
+void MeshBuilderCreate(MeshBuilder *builder) {
         builder->positions = array(vec3);
         builder->normals = array(vec3);
         builder->uvs = array(TextureCoord);
 
         builder->vertices = array(Vertex);
         builder->indices = array(uint32_t);
-
-        return true;
 }
 
 void MeshBuilderFree(MeshBuilder *builder) {
@@ -45,161 +44,214 @@ void MeshFree(Mesh *mesh) {
         array_free(mesh->indices);
 }
 
-bool ObjHandleVertexPosition(MeshBuilder *b, char *line_save) {
-        char *x_str = strtok_r(NULL, " ", &line_save);
-        char *y_str = strtok_r(NULL, " ", &line_save);
-        char *z_str = strtok_r(NULL, " ", &line_save);
+typedef struct {
+        uint32_t v[3];
+        uint32_t vt[3];
+        uint32_t vn[3];
+} Face;
 
-        if (!x_str || !y_str || !z_str) {
-                printf("Error reading vertex position %lu\n", array_length(b->positions));
-                return false;
-        }
+vec3 parse_vert(Str s) {
+        vec3 r = {0};
+        Cut c = make_cut(str_triml(s), ' ');
+        r.x = str_to_float(c.head);
+        c = make_cut(str_triml(c.tail), ' ');
+        r.y = str_to_float(c.head);
+        c = make_cut(str_triml(c.tail), ' ');
+        r.z = str_to_float(c.head);
 
-        float x = strtof(x_str, NULL);
-        float y = strtof(y_str, NULL);
-        float z = strtof(z_str, NULL);
-
-        vec3 pos = (vec3){x, y, z};
-        array_append(b->positions, pos);
-
-        return true;
+        return r;
 }
 
-bool ObjHandleVertexNormals(MeshBuilder *b, char *line_save) {
-        char *x_str = strtok_r(NULL, " ", &line_save);
-        char *y_str = strtok_r(NULL, " ", &line_save);
-        char *z_str = strtok_r(NULL, " ", &line_save);
+vec3 parse_norm(Str s) {
+        vec3 r = {0};
+        Cut c = make_cut(str_triml(s), ' ');
+        r.x = str_to_float(c.head);
+        c = make_cut(str_triml(c.tail), ' ');
+        r.y = str_to_float(c.head);
+        c = make_cut(str_triml(c.tail), ' ');
+        r.z = str_to_float(c.head);
 
-        if (!x_str || !y_str || !z_str) {
-                printf("Error reading normal position %lu\n", array_length(b->normals));
-                return false;
-        }
-
-        float nx = strtof(x_str, NULL);
-        float ny = strtof(y_str, NULL);
-        float nz = strtof(z_str, NULL);
-
-        vec3 normal = (vec3){nx, ny, nz};
-        array_append(b->normals, normal);
-
-        return true;
+        return r;
 }
 
-bool ObjHandleVertexTextureCoords(MeshBuilder *b, char *line_save) {
-        char *u_str = strtok_r(NULL, " ", &line_save);
-        char *v_str = strtok_r(NULL, " ", &line_save);
+TextureCoord parse_tex(Str s) {
+        TextureCoord r = {0};
+        Cut c = make_cut(str_triml(s), ' ');
+        r.u = str_to_float(c.head);
+        c = make_cut(str_triml(c.tail), ' ');
+        r.v = str_to_float(c.head);
 
-        if (!u_str || !v_str) {
-                printf("Error reading vertex texture coord %lu\n", array_length(b->uvs));
-                return false;
-        }
-
-        float u = strtof(u_str, NULL);
-        float v = strtof(v_str, NULL);
-
-        TextureCoord tex = (TextureCoord){.u = u, .v = v};
-        array_append(b->uvs, tex);
-
-        return true;
+        return r;
 }
 
-bool ObjHandleVertex(MeshBuilder *b, char *contents) {
-        Vertex v = {0};
-        v.color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
-        char *next = strtok_r(NULL, "/", &contents);
+int parse_face(Str s, Face *f1, Face *f2) {
+        int num_faces = 1;
+        Cut fields = {0};
+        fields.tail = s;
 
-        if (!next) {
-                printf("Error reading vertex position index.\n");
-                return false;
+        *f1 = (Face){0};
+        *f2 = (Face){0};
+
+        for (int i = 0; i < 3; i += 1) {
+                fields = make_cut(str_triml(fields.tail), ' ');
+                Cut elem = make_cut(fields.head, '/');
+
+                f1->v[i] = str_to_int(elem.head);
+
+                elem = make_cut(elem.tail, '/');
+                // vt? / vn?
+                if (elem.head.len != 0) {
+                        f1->vt[i] = str_to_int(elem.head);
+                }
+
+                if (elem.tail.len != 0) {
+                        f1->vn[i] = str_to_int(elem.tail);
+                }
         }
-        uint32_t pos = strtoul(next, NULL, 10) - 1;
-        v.position = b->positions[pos];
 
-        next = strtok_r(NULL, "/", &contents);
-        if (next && next[0] != '\0') {
-                uint32_t uv = strtoul(next, NULL, 10) - 1;
-                TextureCoord *coord = &b->uvs[uv];
-                v.uv_x = coord->u;
-                v.uv_y = coord->v;
+        fields = make_cut(str_triml(fields.tail), ' ');
+        if (fields.head.len != 0) {
+                f2->v[0] = f1->v[0];
+                f2->v[1] = f1->v[2];
+
+                f2->vt[0] = f1->vt[0];
+                f2->vt[1] = f1->vt[2];
+
+                f2->vn[0] = f1->vn[0];
+                f2->vn[1] = f1->vn[2];
+
+                num_faces = 2;
+                Cut elem = make_cut(fields.head, '/');
+                f2->v[2] = str_to_int(elem.head);
+
+                elem = make_cut(elem.tail, '/');
+                // vt? / vn?
+                if (elem.head.len != 0) {
+                        f2->vt[2] = str_to_int(elem.head);
+                }
+
+                if (elem.tail.len != 0) {
+                        f2->vn[2] = str_to_int(elem.tail);
+                }
         }
 
-        next = strtok_r(NULL, "/", &contents);
-        if (next && next[0] != '\0') {
-                uint32_t vn = strtoul(next, NULL, 10) - 1;
-                v.normal = b->normals[vn];
-        }
-
-        array_append(b->vertices, v);
-
-        return true;
+        return num_faces;
 }
 
-bool ObjHandleFaces(MeshBuilder *b, char *line_save) {
-        for (uint32_t i = 0; i < 3; i += 1) {
-                char *vertex = strtok_r(NULL, " ", &line_save);
-
-                ObjHandleVertex(b, vertex);
-                array_append(b->indices, array_length(b->indices));
-        }
-
-        return true;
-}
-
-bool LoadObjFromFile(Mesh *mesh, const char *filename) {
+Model load_obj(const char *filename) {
         size_t filesize;
         char *data = ReadFile(filename, &filesize);
         if (!data) {
                 printf("Failed to open file %s\n", filename);
-                return false;
+                return (Model){0};
         }
 
-        MeshBuilder builder;
-        MeshBuilderCreate(&builder);
+        Str input = {data, filesize};
+        Cut c = {0};
+        c.tail = input;
 
-        char *save;
-        char *line = strtok_r(data, "\n", &save);
+        Model m = {0};
+        m.meshes = malloc(sizeof(Mesh));
+        m.meshes->vertices = array(Vertex);
+        m.meshes->indices = array(uint32_t);
+        m.num_meshes = 1;
 
-        while (line) {
-                char *line_save;
-                char *token = strtok_r(line, " ", &line_save);
+        vec3 *positions = array(vec3);
+        vec3 *normals = array(vec3);
+        TextureCoord *texs = array(TextureCoord);
+        Face *faces = array(Face);
 
-                if (!token) {
-                        printf("Error parsing %s.\n", filename);
-                        free(data);
-                        return false;
+        size_t num_lines = 0;
+        while (c.tail.len) {
+                c = make_cut(c.tail, '\n');
+                Str line = c.head;
+
+                Cut fields = make_cut(str_triml(line), ' ');
+                if (str_equal(fields.head, make_str("v"))) {
+                        array_append(positions, parse_vert(fields.tail));
+                } else if (str_equal(fields.head, make_str("vn"))) {
+                        array_append(normals, parse_norm(fields.tail));
+                } else if (str_equal(fields.head, make_str("vt"))) {
+                        array_append(texs, parse_tex(fields.tail));
+                } else if (str_equal(fields.head, make_str("f"))) {
+                        Face f1, f2;
+                        int num_faces = parse_face(fields.tail, &f1, &f2);
+                        array_append(faces, f1);
+                        array_append(faces, f2);
+                } else {
+                        printf("unknown line: %.*s\n", fields.tail.len, fields.tail.data);
                 }
 
-                if (strcmp(token, "v") == 0) {
-                        ObjHandleVertexPosition(&builder, line_save);
-                } else if (strcmp(token, "vn") == 0) {
-                        ObjHandleVertexNormals(&builder, line_save);
-                } else if (strcmp(token, "vt") == 0) {
-                        ObjHandleVertexTextureCoords(&builder, line_save);
-                } else if (strcmp(token, "f") == 0) {
-                        ObjHandleFaces(&builder, line_save);
-                } else if (token[0] != '#') {
-                        // This line is not a comment, print token for debugging purposes
-                        printf("Unknown token for line \"%s\"\n", token);
-                }
+                num_lines += 1;
+        }
 
-                line = strtok_r(NULL, "\n", &save);
+        printf("num lines: %zu\n", num_lines);
+
+        for (int i = 0; i < array_length(faces); i += 1) {
+                for (int f = 0; f < 3; f += 1) {
+                        Vertex vert = {0};
+                        uint32_t v = faces[i].v[f];
+                        uint32_t vt = faces[i].vt[f];
+                        uint32_t vn = faces[i].vn[f];
+
+                        vert.position = positions[v - 1];
+                        if (vn != 0) {
+                                vert.normal = normals[vn - 1];
+                        }
+                        vert.color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
+                        if (vt != 0) {
+                                vert.uv_x = texs[vt - 1].u;
+                                vert.uv_x = texs[vt - 1].v;
+                        }
+
+                        array_append(m.meshes->vertices, vert);
+                        array_append(m.meshes->indices, array_length(m.meshes->indices));
+                }
+        }
+
+        printf("Model Info:\n");
+        for (int i = 0; i < m.num_meshes; i += 1) {
+                printf("Mesh #%d\n:", i);
+                printf("  Num Vertices: %zu\n", array_length(m.meshes->vertices));
+                printf("  Num Indices: %zu\n", array_length(m.meshes->indices));
+        }
+
+        for (int i = 0; i < 3; i += 1) {
+                Face f = faces[i];
+                printf("f %d/%d/%d %d/%d/%d %d/%d/%d\n", f.v[0], f.vt[0], f.vn[0], f.v[1], f.vt[1],
+                       f.vn[1], f.v[2], f.vt[2], f.vn[2]);
+        }
+
+        for (int i = 0; i < 3; i += 1) {
+                vec3 pos = m.meshes->vertices[0].position;
+                printf("face %d: {%f, %f, %f}\n", i, pos.x, pos.y, pos.z);
         }
 
         free(data);
-        *mesh = MeshBuilderBuild(&builder);
+        array_free(positions);
+        array_free(normals);
+        array_free(texs);
+        array_free(faces);
 
-        MeshBuilderFree(&builder);
-
-        return true;
+        return m;
 }
 
-bool LoadFromFile(Mesh *mesh, const char *filename) {
+Model load_model(const char *filename) {
         int len = strlen(filename);
 
         if (strcmp(filename + (len - 4), ".obj") == 0) {
-                return LoadObjFromFile(mesh, filename);
+                return load_obj(filename);
         }
 
         printf("Could not determine filetype for file %s\n", filename);
-        return false;
+
+        return (Model){0};
+}
+
+void model_destroy(Model m) {
+        for (int i = 0; i < m.num_meshes; i += 1) {
+                MeshFree(&m.meshes[i]);
+        }
+
+        free(m.meshes);
 }

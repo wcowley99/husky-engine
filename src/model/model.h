@@ -3,6 +3,7 @@
 #include "common/linalgebra.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -25,5 +26,13 @@ typedef struct {
         float v;
 } TextureCoord;
 
-bool LoadObjFromFile(Mesh *mesh, const char *filename);
-bool LoadFromFile(Mesh *mesh, const char *filename);
+typedef struct {
+        Mesh *meshes;
+        size_t num_meshes;
+} Model;
+
+Model load_obj(const char *filename);
+
+Model load_model(const char *filename);
+
+void model_destroy(Model m);

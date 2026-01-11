@@ -10,8 +10,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Build Source
 find_package(Vulkan REQUIRED)
+find_package(SDL3 REQUIRED)
 
-add_subdirectory(external/SDL)
 add_subdirectory(external/volk)
 
 add_library(VulkanMemoryAllocator 
@@ -32,8 +32,6 @@ target_compile_definitions(VulkanMemoryAllocator PUBLIC
 )
 
 add_library(engine-lib
-  src/common/linalgebra.c
-
   src/model/model.c
 
   src/renderer/buffer.c
@@ -43,8 +41,10 @@ add_library(engine-lib
   src/renderer/renderer.c
   src/renderer/vkb.c
 
-  src/common/util.c
   src/common/array.c
+  src/common/linalgebra.c
+  src/common/str.c
+  src/common/util.c
 )
 
 target_link_libraries(engine-lib PUBLIC
@@ -55,7 +55,6 @@ target_link_libraries(engine-lib PUBLIC
 )
 
 target_include_directories(engine-lib PUBLIC
-  external/SDL/include
   external/VulkanMemoryAllocator/include
   external/volk
   ${CMAKE_BINARY_DIR}
