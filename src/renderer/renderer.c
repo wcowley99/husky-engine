@@ -67,6 +67,7 @@ GraphicsPipeline *g_ActiveGraphicsPipeline;
 Model g_Model;
 
 MeshBuffer *g_MeshBuffers;
+AllocatedImage *g_Textures;
 
 vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
 vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
@@ -74,8 +75,6 @@ const vec3 g_UpVector = {0.0f, 1.0f, 0.0f};
 
 uint32_t g_Width;
 uint32_t g_Height;
-
-AllocatedImage g_ErrorTexture;
 
 Material g_DefaultMaterial;
 
@@ -165,10 +164,17 @@ bool frame_resources_create(FrameResources *f) {
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
 
+        uint32_t count = MAX_TEXTURES / 4;
+        VkDescriptorSetVariableDescriptorCountAllocateInfo count_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
+            .descriptorSetCount = 1,
+            .pDescriptorCounts = &count,
+        };
+
         EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout, 1,
-                                             &f->global_descriptors));
+                                             &f->global_descriptors, &count_info));
         EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_MaterialDescriptorLayout, 1,
-                                             &f->mat_descriptors));
+                                             &f->mat_descriptors, NULL));
 
         EXPECT(buffer_create(g_Allocator, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
@@ -199,7 +205,7 @@ bool frame_resources_create(FrameResources *f) {
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstBinding = 1,
-                .dstSet = f->mat_descriptors,
+                .dstSet = f->global_descriptors,
                 .descriptorCount = 1,
                 .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .pBufferInfo = &instance_info,
@@ -450,6 +456,7 @@ bool RendererInit(RendererCreateInfo *c) {
                                 g_IntermediateImage.image.format);
 
         g_MeshBuffers = array(MeshBuffer);
+        g_Textures = array(AllocatedImage);
 
         // g_Model = load_model("assets/objs/city/center-city/Center_City_Sci-Fi.obj");
         g_Model = load_model("assets/objs/stone-golem.obj");
@@ -471,7 +478,6 @@ void RendererShutdown() {
         compute_pipeline_destroy(&g_GradientPipeline, g_Device);
         graphics_pipeline_destroy(&g_PbrPipeline, g_Device);
 
-        allocated_image_destroy(&g_ErrorTexture, g_Device);
         vkDestroySampler(g_Device, g_LinearSampler, NULL);
         vkDestroySampler(g_Device, g_NearestSampler, NULL);
 
@@ -482,6 +488,11 @@ void RendererShutdown() {
                 mesh_buffer_destroy(&g_MeshBuffers[i]);
         }
         array_free(g_MeshBuffers);
+
+        for (int i = 0; i < array_length(g_Textures); i += 1) {
+                allocated_image_destroy(&g_Textures[i], g_Device);
+        }
+        array_free(g_Textures);
 
         swapchain_destroy();
         immediate_command_destroy(&g_ImmediateCommand);
@@ -604,23 +615,6 @@ void DrawCommandBindTexture(Image *image) {
                 printf("No currently bound graphics pipeline!");
                 return;
         }
-
-        VkDescriptorImageInfo image_info = {
-            .sampler = g_LinearSampler,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .imageView = image->image_view,
-        };
-
-        VkWriteDescriptorSet write_set = {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
-            .dstSet = g_CurrentFrameResources->mat_descriptors,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImageInfo = &image_info,
-        };
-
-        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
 
         vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 g_ActiveGraphicsPipeline->layout, 1, 1,
@@ -761,7 +755,7 @@ void RendererDraw() {
                            VK_WHOLE_SIZE);
         vmaUnmapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation);
         // // DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
-        DrawCommandBindTexture(&g_ErrorTexture.image);
+        DrawCommandBindTexture(&g_Textures[0].image);
 
         DrawCommandBindIndexBuffer(&g_MeshBuffers[0]);
         vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices),
@@ -794,7 +788,11 @@ bool init_textures(MaterialInfo *mats) {
             .data = (uint32_t *)mats->diffuse_tex,
             .imm = &g_ImmediateCommand,
         };
-        EXPECT(allocated_image_create(&create_info, &g_ErrorTexture));
+
+        size_t index = array_length(g_Textures);
+        array_append(g_Textures, (AllocatedImage){0});
+        AllocatedImage *image = &g_Textures[index];
+        EXPECT(allocated_image_create(&create_info, image));
 
         VkSamplerCreateInfo sampler_info = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 
@@ -807,6 +805,25 @@ bool init_textures(MaterialInfo *mats) {
         sampler_info.minFilter = VK_FILTER_NEAREST;
 
         vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
+
+        for (int i = 0; i < g_SwapchainImageCount; i += 1) {
+                VkDescriptorImageInfo image_info = {
+                    .sampler = g_LinearSampler,
+                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    .imageView = g_Textures[index].image.image_view,
+                };
+
+                VkWriteDescriptorSet write_set = {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstBinding = 2,
+                    .dstSet = g_SwapchainFrameResources[i].global_descriptors,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .pImageInfo = &image_info,
+                };
+
+                vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+        }
 
         return true;
 }
@@ -832,25 +849,17 @@ bool init_descriptors() {
             },
         };
         EXPECT(create_descriptor_layout(bindings, sizeof(bindings) / sizeof(*bindings),
-                                        &g_IntermediateImageDescriptorLayout));
+                                        &g_IntermediateImageDescriptorLayout, NULL));
         EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator,
                                              &g_IntermediateImageDescriptorLayout, 1,
-                                             &g_IntermediateImageDescriptors));
+                                             &g_IntermediateImageDescriptors, NULL));
 
-        VkDescriptorSetLayoutBinding global_descriptor_bindings[] = {{
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        }};
-        EXPECT(create_descriptor_layout(global_descriptor_bindings, 1, &g_GlobalDescriptorLayout));
-
-        VkDescriptorSetLayoutBinding mat_bindings[] = {
+        VkDescriptorSetLayoutBinding global_descriptor_bindings[] = {
             {
                 .binding = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
             },
             {
                 .binding = 1,
@@ -858,8 +867,25 @@ bool init_descriptors() {
                 .descriptorCount = 1,
                 .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
             },
+            {
+                .binding = 2,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = MAX_TEXTURES,
+                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
         };
-        EXPECT(create_descriptor_layout(mat_bindings, 2, &g_MaterialDescriptorLayout));
+        VkDescriptorBindingFlags flags[] = {
+            0,
+            0,
+            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT,
+        };
+        EXPECT(create_descriptor_layout(global_descriptor_bindings, 3, &g_GlobalDescriptorLayout,
+                                        flags));
+
+        VkDescriptorSetLayoutBinding mat_bindings[] = {};
+        EXPECT(create_descriptor_layout(mat_bindings, 0, &g_MaterialDescriptorLayout, NULL));
 
         VkDescriptorImageInfo image_info = {
             .sampler = VK_NULL_HANDLE,
@@ -983,7 +1009,6 @@ bool is_gpu_suitable(VkPhysicalDevice gpu) {
         VkPhysicalDeviceVulkan13Features f13 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = &f12};
         VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                       .features.robustBufferAccess = VK_TRUE,
                                        .pNext = &f13};
 
         vkGetPhysicalDeviceProperties(gpu, &p);
@@ -994,7 +1019,8 @@ bool is_gpu_suitable(VkPhysicalDevice gpu) {
         }
 
         if (!f12.bufferDeviceAddress || !f12.descriptorIndexing || !f13.dynamicRendering ||
-            !f13.synchronization2) {
+            !f13.synchronization2 || !f.features.robustBufferAccess ||
+            !f12.descriptorBindingPartiallyBound || !f12.runtimeDescriptorArray) {
                 return false;
         }
 
@@ -1056,6 +1082,11 @@ bool create_device() {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
             .bufferDeviceAddress = VK_TRUE,
             .descriptorIndexing = VK_TRUE,
+            .runtimeDescriptorArray = VK_TRUE,
+            .descriptorBindingPartiallyBound = VK_TRUE,
+            .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+            .descriptorBindingVariableDescriptorCount = VK_TRUE,
+            .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
         };
         VkPhysicalDeviceVulkan13Features f13 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
@@ -1064,6 +1095,7 @@ bool create_device() {
             .pNext = &f12,
         };
         VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                       .features.robustBufferAccess = VK_TRUE,
                                        .pNext = &f13};
 
         VkDeviceCreateInfo create_info = {
@@ -1096,11 +1128,20 @@ bool begin_command_buffer(VkCommandBuffer command) {
 }
 
 bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
-                              VkDescriptorSetLayout *layout) {
+                              VkDescriptorSetLayout *layout, VkDescriptorBindingFlags *flags) {
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            .bindingCount = count,
+            .pBindingFlags = flags,
+        };
+
         VkDescriptorSetLayoutCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             .pBindings = bindings,
             .bindingCount = count,
+            .flags = flags ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT : 0,
+            .pNext = flags ? &binding_info : NULL,
         };
 
         VK_EXPECT(vkCreateDescriptorSetLayout(g_Device, &create_info, NULL, layout));

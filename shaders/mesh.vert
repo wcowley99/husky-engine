@@ -29,7 +29,7 @@ struct Instance {
   int padding;
 };
 
-layout(std430, set = 1, binding = 1) readonly buffer InstanceBuffer {
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
   Instance instances[];
 } instance_buffer;
 

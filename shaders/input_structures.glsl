@@ -14,6 +14,5 @@ layout(set = 0, binding = 0) uniform SceneData {
 //   vec4 colorFactors;
 //   vec4 metal_rough_factors;
 // } materialData;
-//
-layout(set = 1, binding = 0) uniform sampler2D colorTex;
+
 // layout(set = 1, binding = 2) uniform sampler2D metalRoughTex;

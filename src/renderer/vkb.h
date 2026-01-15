@@ -11,6 +11,9 @@
 
 #include <stdio.h>
 
+#define MAX_INSTANCES 5000
+#define MAX_TEXTURES 5000000
+
 #define EXPECT(x)                                                                                  \
         do {                                                                                       \
                 if (!(x)) {                                                                        \

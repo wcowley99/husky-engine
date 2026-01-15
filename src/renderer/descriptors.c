@@ -6,7 +6,7 @@ bool descriptor_allocator_create(VkDevice device, DescriptorAllocator *allocator
         allocator->device = device;
         VkDescriptorPoolSize pool_sizes[] = {
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
-            {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 4},
+            {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = MAX_TEXTURES},
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 4},
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 4},
         };
@@ -26,12 +26,13 @@ void descriptor_allocator_clear(DescriptorAllocator *allocator) {
 }
 
 bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDescriptorSetLayout *layouts,
-                                   uint32_t count, VkDescriptorSet *sets) {
+                                   uint32_t count, VkDescriptorSet *sets, void *pNext) {
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool = allocator->pool,
             .pSetLayouts = layouts,
             .descriptorSetCount = count,
+            .pNext = pNext,
         };
 
         VK_EXPECT(vkAllocateDescriptorSets(allocator->device, &alloc_info, sets));
@@ -50,7 +51,8 @@ bool create_descriptor_pool(VkDevice device, VkDescriptorPoolSize *sizes, uint32
             .pPoolSizes = sizes,
             .poolSizeCount = count,
             .maxSets = sum,
-            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+            .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT |
+                     VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
         };
 
         VK_EXPECT(vkCreateDescriptorPool(device, &create_info, NULL, pool));

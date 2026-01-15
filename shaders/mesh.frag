@@ -1,6 +1,7 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : enable
 
 #include "input_structures.glsl"
 
@@ -11,6 +12,8 @@ layout(location = 3) flat in int inTexIndex;
 
 layout(location = 0) out vec4 fragColor;
 
+layout(set = 0, binding = 2) uniform sampler2D diffuse_textures[];
+
 void main() {
   // float light = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1f);
   //
@@ -18,5 +21,5 @@ void main() {
   // vec3 ambient = color * sceneData.ambientColor.xyz;
 
   // fragColor = vec4(color * light * sceneData.sunlightColor.w + ambient, 1.0f);
-  fragColor = texture(colorTex, inUV);
+  fragColor = texture(diffuse_textures[nonuniformEXT(inTexIndex)], inUV);
 }

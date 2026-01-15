@@ -12,8 +12,6 @@
 #include <assert.h>
 #include <stdint.h>
 
-#define MAX_INSTANCES 5000
-
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -118,4 +116,4 @@ bool create_device();
 bool begin_command_buffer(VkCommandBuffer command);
 
 bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
-                              VkDescriptorSetLayout *layout);
+                              VkDescriptorSetLayout *layout, VkDescriptorBindingFlags *flags);
