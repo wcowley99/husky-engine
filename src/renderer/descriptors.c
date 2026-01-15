@@ -8,6 +8,7 @@ bool descriptor_allocator_create(VkDevice device, DescriptorAllocator *allocator
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
             {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 4},
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 4},
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 4},
         };
         EXPECT(create_descriptor_pool(device, pool_sizes,
                                       sizeof(pool_sizes) / sizeof(VkDescriptorPoolSize),

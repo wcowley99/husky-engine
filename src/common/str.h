@@ -16,6 +16,8 @@ Str str_span(char *beg, char *end);
 Str str_trimr(Str s);
 Str str_triml(Str s);
 
+char *str_to_chars(Str s);
+
 float str_to_float(Str s);
 int32_t str_to_int(Str s);
 
@@ -28,3 +30,4 @@ typedef struct {
 } Cut;
 
 Cut make_cut(Str s, char c);
+Cut make_cutr(Str s, char c);

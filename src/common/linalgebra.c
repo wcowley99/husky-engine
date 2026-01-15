@@ -47,7 +47,7 @@ vec3 vec3_cross(vec3 a, vec3 b) {
 
 float vec3_dot(vec3 a, vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-mat4 mat4_mult(mat4 a, mat4 b) {
+mat4 mat4_mul(mat4 a, mat4 b) {
         return (mat4){
             a.m00 * b.m00 + a.m10 * b.m01 + a.m20 * b.m02 + a.m30 * b.m03,
             a.m01 * b.m00 + a.m11 * b.m01 + a.m21 * b.m02 + a.m31 * b.m03,
@@ -110,4 +110,12 @@ mat4 mat4_frustum(float left, float right, float top, float bottom, float near, 
             {0, 0, -(far + near) / (far - near), -1},
             {0, 0, -2 * far * near / (far - near), 0},
         }};
+}
+
+mat4 mat4_translate(mat4 a, vec3 b) {
+        a.m30 = b.x;
+        a.m31 = b.y;
+        a.m32 = b.z;
+
+        return a;
 }

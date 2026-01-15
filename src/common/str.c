@@ -1,6 +1,7 @@
 #include "str.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 Str str_span(char *beg, char *end) {
@@ -27,6 +28,14 @@ Str str_triml(Str s) {
         }
 
         return s;
+}
+
+char *str_to_chars(Str s) {
+        char *r = malloc(s.len + 1);
+        memcpy(r, s.data, s.len);
+        r[s.len] = '\0';
+
+        return r;
 }
 
 float str_to_float(Str s) {
@@ -94,6 +103,27 @@ Cut make_cut(Str s, char c) {
         }
 
         r.ok = cut < end;
+        r.head = str_span(beg, cut);
+        r.tail = str_span(cut + r.ok, end);
+
+        return r;
+}
+
+Cut make_cutr(Str s, char c) {
+        Cut r = {0};
+        if (s.len == 0) {
+                return r;
+        }
+
+        char *beg = s.data;
+        char *end = s.data + s.len;
+        char *cut = end - 1;
+
+        while (cut >= beg && cut[0] != c) {
+                cut--;
+        }
+
+        r.ok = cut >= beg;
         r.head = str_span(beg, cut);
         r.tail = str_span(cut + r.ok, end);
 

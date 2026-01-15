@@ -12,6 +12,8 @@
 #include <assert.h>
 #include <stdint.h>
 
+#define MAX_INSTANCES 5000
+
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -21,12 +23,18 @@ typedef struct {
         mat4 view;
         mat4 proj;
         mat4 viewproj;
+
+        vec4 ambientColor;
+        vec4 sunlightDirection;
+        vec4 sunlightColor;
 } CameraData;
 
 typedef struct {
-        mat4 matrix;
+        mat4 model;
         VkDeviceAddress vertex_address;
-} MeshPushConstants;
+        int tex_index;
+        int padding;
+} Instance;
 
 typedef struct {
         Buffer vertex;
@@ -34,7 +42,7 @@ typedef struct {
         VkDeviceAddress vertex_address;
 } MeshBuffer;
 
-bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer);
+size_t mesh_buffer_create(Mesh *mesh);
 void mesh_buffer_destroy(MeshBuffer *buffer);
 
 ///////////////////////////////////////
@@ -48,6 +56,7 @@ typedef struct {
         VkFence render_fence;
 
         Buffer camera_uniform;
+        Buffer instance_buffer;
 
         VkDescriptorSet global_descriptors;
         VkDescriptorSet mat_descriptors;
@@ -58,67 +67,6 @@ bool frame_resources_create(FrameResources *f);
 void frame_resources_destroy(FrameResources *f);
 
 bool frame_resources_submit(FrameResources *f);
-
-///////////////////////////////////////
-/// Compute Pipeline
-///////////////////////////////////////
-
-typedef struct {
-        VkDescriptorSetLayout *descriptors;
-        uint32_t num_descriptors;
-
-        const uint32_t *push_constant_sizes;
-        uint32_t num_push_constant_sizes;
-
-        const uint32_t *shader_source;
-        uint32_t shader_source_size;
-} ComputePipelineInfo;
-
-typedef struct {
-        VkPipeline pipeline;
-        VkPipelineLayout layout;
-} ComputePipeline;
-
-bool compute_pipeline_create(ComputePipelineInfo *info, ComputePipeline *p);
-
-void compute_pipeline_destroy(ComputePipeline *p);
-
-///////////////////////////////////////
-/// Graphics Pipeline
-///////////////////////////////////////
-
-typedef struct {
-        VkDescriptorSetLayout *descriptors;
-        uint32_t num_descriptors;
-
-        const VkPushConstantRange *push_constants;
-        uint32_t num_push_constants;
-
-        VkPrimitiveTopology topology;
-        VkPolygonMode polygon_mode;
-        VkCullModeFlagBits cull_mode;
-        VkFrontFace front_face;
-        VkFormat color_attachment_format;
-        VkFormat depth_attachment_format;
-
-        const uint32_t *vertex_shader;
-        uint32_t vertex_shader_size;
-
-        const uint32_t *fragment_shader;
-        uint32_t fragment_shader_size;
-
-        bool depth_testing;
-        VkCompareOp depth_compare_op;
-} GraphicsPipelineCreateInfo;
-
-typedef struct {
-        VkPipeline pipeline;
-        VkPipelineLayout layout;
-} GraphicsPipeline;
-
-bool graphics_pipeline_create(GraphicsPipelineCreateInfo *create_info, GraphicsPipeline *pipeline);
-
-void graphics_pipeline_destroy(GraphicsPipeline *pipeline);
 
 ///////////////////////////////////////
 /// Swapchain
@@ -150,7 +98,7 @@ void RendererDraw();
 
 void MoveCamera(vec3 delta);
 
-bool init_textures();
+bool init_textures(MaterialInfo *mats);
 
 // Vulkan Initialization Functions
 
@@ -168,8 +116,6 @@ bool select_gpu();
 bool create_device();
 
 bool begin_command_buffer(VkCommandBuffer command);
-
-bool create_shader_module(const uint32_t *bytes, size_t size, VkShaderModule *module);
 
 bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
                               VkDescriptorSetLayout *layout);

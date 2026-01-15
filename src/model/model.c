@@ -4,45 +4,12 @@
 #include "common/str.h"
 #include "common/util.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef struct {
-        vec3 *positions;
-        vec3 *normals;
-        TextureCoord *uvs;
-
-        Vertex *vertices;
-        uint32_t *indices;
-} MeshBuilder;
-
-void MeshBuilderCreate(MeshBuilder *builder) {
-        builder->positions = array(vec3);
-        builder->normals = array(vec3);
-        builder->uvs = array(TextureCoord);
-
-        builder->vertices = array(Vertex);
-        builder->indices = array(uint32_t);
-}
-
-void MeshBuilderFree(MeshBuilder *builder) {
-        array_free(builder->positions);
-        array_free(builder->normals);
-        array_free(builder->uvs);
-}
-
-Mesh MeshBuilderBuild(MeshBuilder *b) {
-        return (Mesh){
-            .vertices = b->vertices,
-            .indices = b->indices,
-        };
-}
-
-void MeshFree(Mesh *mesh) {
-        array_free(mesh->vertices);
-        array_free(mesh->indices);
-}
 
 typedef struct {
         uint32_t v[3];
@@ -50,19 +17,14 @@ typedef struct {
         uint32_t vn[3];
 } Face;
 
-vec3 parse_vert(Str s) {
-        vec3 r = {0};
-        Cut c = make_cut(str_triml(s), ' ');
-        r.x = str_to_float(c.head);
-        c = make_cut(str_triml(c.tail), ' ');
-        r.y = str_to_float(c.head);
-        c = make_cut(str_triml(c.tail), ' ');
-        r.z = str_to_float(c.head);
-
-        return r;
+void MeshFree(Mesh *mesh) {
+        array_free(mesh->vertices);
+        array_free(mesh->indices);
 }
 
-vec3 parse_norm(Str s) {
+void material_info_destroy(MaterialInfo *mat) { free(mat->diffuse_tex); }
+
+vec3 parse_vec3(Str s) {
         vec3 r = {0};
         Cut c = make_cut(str_triml(s), ' ');
         r.x = str_to_float(c.head);
@@ -84,61 +46,122 @@ TextureCoord parse_tex(Str s) {
         return r;
 }
 
-int parse_face(Str s, Face *f1, Face *f2) {
-        int num_faces = 1;
+void parse_face(Str s, Face **faces) {
         Cut fields = {0};
         fields.tail = s;
 
-        *f1 = (Face){0};
-        *f2 = (Face){0};
+        Face f = {0};
 
         for (int i = 0; i < 3; i += 1) {
                 fields = make_cut(str_triml(fields.tail), ' ');
                 Cut elem = make_cut(fields.head, '/');
 
-                f1->v[i] = str_to_int(elem.head);
+                f.v[i] = str_to_int(elem.head);
 
                 elem = make_cut(elem.tail, '/');
                 // vt? / vn?
                 if (elem.head.len != 0) {
-                        f1->vt[i] = str_to_int(elem.head);
+                        f.vt[i] = str_to_int(elem.head);
                 }
 
                 if (elem.tail.len != 0) {
-                        f1->vn[i] = str_to_int(elem.tail);
+                        f.vn[i] = str_to_int(elem.tail);
                 }
         }
+
+        array_append(*faces, f);
 
         fields = make_cut(str_triml(fields.tail), ' ');
         if (fields.head.len != 0) {
-                f2->v[0] = f1->v[0];
-                f2->v[1] = f1->v[2];
+                f.v[1] = f.v[2];
+                f.vt[1] = f.vt[2];
+                f.vn[1] = f.vn[2];
 
-                f2->vt[0] = f1->vt[0];
-                f2->vt[1] = f1->vt[2];
-
-                f2->vn[0] = f1->vn[0];
-                f2->vn[1] = f1->vn[2];
-
-                num_faces = 2;
                 Cut elem = make_cut(fields.head, '/');
-                f2->v[2] = str_to_int(elem.head);
+                f.v[2] = str_to_int(elem.head);
 
                 elem = make_cut(elem.tail, '/');
                 // vt? / vn?
                 if (elem.head.len != 0) {
-                        f2->vt[2] = str_to_int(elem.head);
+                        f.vt[2] = str_to_int(elem.head);
                 }
 
                 if (elem.tail.len != 0) {
-                        f2->vn[2] = str_to_int(elem.tail);
+                        f.vn[2] = str_to_int(elem.tail);
                 }
         }
 
-        return num_faces;
+        array_append(*faces, f);
+}
+
+MaterialInfo *load_mats(Str path, Str mtlfile) {
+        char *filepath = malloc(path.len + mtlfile.len + 2);
+        memcpy(filepath, path.data, path.len);
+        filepath[path.len] = '/';
+        memcpy(filepath + path.len + 1, mtlfile.data, mtlfile.len);
+        filepath[path.len + mtlfile.len + 1] = '\0';
+
+        size_t filesize;
+        char *data = ReadFile(filepath, &filesize);
+
+        free(filepath);
+
+        Str input = {data, filesize};
+        Cut c = {0};
+        c.tail = input;
+
+        MaterialInfo *mats = array(MaterialInfo);
+
+        MaterialInfo *current = NULL;
+
+        while (c.tail.len) {
+                c = make_cut(c.tail, '\n');
+                Str line = c.head;
+
+                Cut fields = make_cut(str_triml(line), ' ');
+                if (str_equal(fields.head, make_str("newmtl"))) {
+                        array_append(mats, (MaterialInfo){0});
+                        current = &mats[array_length(mats) - 1];
+                        current->name = str_to_chars(fields.tail);
+                } else if (!fields.head.len || !current) {
+                        continue;
+                } else if (str_equal(fields.head, make_str("Ka"))) {
+                        current->ambient = parse_vec3(fields.tail);
+                } else if (str_equal(fields.head, make_str("Ks"))) {
+                        current->specular = parse_vec3(fields.tail);
+                } else if (str_equal(fields.head, make_str("map_Kd"))) {
+                        char *texpath = malloc(path.len + fields.tail.len + 2);
+                        memcpy(texpath, path.data, path.len);
+                        texpath[path.len] = '/';
+                        memcpy(texpath + path.len + 1, fields.tail.data, fields.tail.len);
+                        texpath[path.len + fields.tail.len + 1] = '\0';
+
+                        int width, height, channels;
+                        stbi_set_flip_vertically_on_load(true);
+                        current->diffuse_tex =
+                            (char *)stbi_load(texpath, &width, &height, &channels, 4);
+                        printf("num_channels: %d\n", channels);
+                        current->diffuse_width = width;
+                        current->diffuse_height = height;
+
+                        free(texpath);
+                } else if (fields.head.data[0] != '#') {
+                        printf("unknown .mtl line leader: %.*s\n", fields.head.len,
+                               fields.head.data);
+                }
+        }
+
+        return mats;
 }
 
 Model load_obj(const char *filename) {
+        Str file = {filename, strlen(filename)};
+        Cut path = make_cutr(file, '/');
+
+        printf("path: %s\n", filename);
+        printf("head: %.*s | tail: %.*s\n", path.head.len, path.head.data, path.tail.len,
+               path.tail.data);
+
         size_t filesize;
         char *data = ReadFile(filename, &filesize);
         if (!data) {
@@ -151,7 +174,7 @@ Model load_obj(const char *filename) {
         c.tail = input;
 
         Model m = {0};
-        m.meshes = malloc(sizeof(Mesh));
+        m.meshes = array(Mesh);
         m.meshes->vertices = array(Vertex);
         m.meshes->indices = array(uint32_t);
         m.num_meshes = 1;
@@ -167,21 +190,25 @@ Model load_obj(const char *filename) {
                 Str line = c.head;
 
                 Cut fields = make_cut(str_triml(line), ' ');
-                if (str_equal(fields.head, make_str("v"))) {
-                        array_append(positions, parse_vert(fields.tail));
+                if (!fields.head.len) {
+                        continue;
+                } else if (str_equal(fields.head, make_str("mtllib"))) {
+                        m.materials = load_mats(path.head, fields.tail);
+                } else if (str_equal(fields.head, make_str("v"))) {
+                        array_append(positions, parse_vec3(fields.tail));
                 } else if (str_equal(fields.head, make_str("vn"))) {
-                        array_append(normals, parse_norm(fields.tail));
+                        array_append(normals, parse_vec3(fields.tail));
                 } else if (str_equal(fields.head, make_str("vt"))) {
                         array_append(texs, parse_tex(fields.tail));
                 } else if (str_equal(fields.head, make_str("f"))) {
-                        Face f1, f2;
-                        int num_faces = parse_face(fields.tail, &f1, &f2);
-                        array_append(faces, f1);
-                        array_append(faces, f2);
-                } else {
-                        printf("unknown line: %.*s\n", fields.tail.len, fields.tail.data);
+                        parse_face(fields.tail, &faces);
+                } else if (str_equal(fields.head, make_str("usemtl"))) {
+                        printf("todo: set material\n");
+                } else if (fields.head.data[0] != '#') {
+                        // not a comment, unknown field
+                        printf("unknown .obj line leader: %.*s\n", fields.head.len,
+                               fields.head.data);
                 }
-
                 num_lines += 1;
         }
 
@@ -194,6 +221,8 @@ Model load_obj(const char *filename) {
                         uint32_t vt = faces[i].vt[f];
                         uint32_t vn = faces[i].vn[f];
 
+                        // OBJ models are 1-indexed, so to convert to the proper array
+                        // index, we need to subtract 1
                         vert.position = positions[v - 1];
                         if (vn != 0) {
                                 vert.normal = normals[vn - 1];
@@ -201,30 +230,13 @@ Model load_obj(const char *filename) {
                         vert.color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
                         if (vt != 0) {
                                 vert.uv_x = texs[vt - 1].u;
-                                vert.uv_x = texs[vt - 1].v;
+                                vert.uv_y = texs[vt - 1].v;
                         }
 
+                        // TODO: refactor to actually reuse indices
                         array_append(m.meshes->vertices, vert);
                         array_append(m.meshes->indices, array_length(m.meshes->indices));
                 }
-        }
-
-        printf("Model Info:\n");
-        for (int i = 0; i < m.num_meshes; i += 1) {
-                printf("Mesh #%d\n:", i);
-                printf("  Num Vertices: %zu\n", array_length(m.meshes->vertices));
-                printf("  Num Indices: %zu\n", array_length(m.meshes->indices));
-        }
-
-        for (int i = 0; i < 3; i += 1) {
-                Face f = faces[i];
-                printf("f %d/%d/%d %d/%d/%d %d/%d/%d\n", f.v[0], f.vt[0], f.vn[0], f.v[1], f.vt[1],
-                       f.vn[1], f.v[2], f.vt[2], f.vn[2]);
-        }
-
-        for (int i = 0; i < 3; i += 1) {
-                vec3 pos = m.meshes->vertices[0].position;
-                printf("face %d: {%f, %f, %f}\n", i, pos.x, pos.y, pos.z);
         }
 
         free(data);
@@ -253,5 +265,10 @@ void model_destroy(Model m) {
                 MeshFree(&m.meshes[i]);
         }
 
-        free(m.meshes);
+        for (int i = 0; i < array_length(m.materials); i += 1) {
+                material_info_destroy(&m.materials[i]);
+        }
+
+        array_free(m.meshes);
+        array_free(m.materials);
 }

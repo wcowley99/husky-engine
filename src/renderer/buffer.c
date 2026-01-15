@@ -11,7 +11,8 @@ bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags
 
         VmaAllocationCreateInfo alloc_info = {
             .usage = usage,
-            .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT,
+            .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                     VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
         };
 
         VkResult result = vmaCreateBuffer(allocator, &create_info, &alloc_info, &buffer->buffer,

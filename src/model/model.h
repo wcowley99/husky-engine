@@ -27,8 +27,23 @@ typedef struct {
 } TextureCoord;
 
 typedef struct {
+        char *name;
+
+        vec3 ambient;
+        vec3 specular;
+
+        char *diffuse_tex;
+        size_t diffuse_width;
+        size_t diffuse_height;
+} MaterialInfo;
+
+void material_destroy(MaterialInfo *mat);
+
+typedef struct {
         Mesh *meshes;
         size_t num_meshes;
+
+        MaterialInfo *materials;
 } Model;
 
 Model load_obj(const char *filename);

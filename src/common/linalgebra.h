@@ -73,9 +73,11 @@ vec3 vec3_cross(vec3 a, vec3 b);
 
 float vec3_dot(vec3 a, vec3 b);
 
-mat4 mat4_mult(mat4 a, mat4 b);
+mat4 mat4_mul(mat4 a, mat4 b);
 vec4 mat4_mul_vec(mat4 a, vec4 b);
 
 mat4 mat4_look_at(vec3 position, vec3 target, vec3 up);
 mat4 mat4_perspective(float fov, float aspect, float near, float far);
 mat4 mat4_frustum(float left, float right, float top, float bottom, float near, float far);
+
+mat4 mat4_translate(mat4 a, vec3 b);

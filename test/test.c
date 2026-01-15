@@ -90,20 +90,20 @@ bool test_mat4_mul_vec() {
         return true;
 }
 
-bool test_mat4_mult() {
+bool test_mat4_mul() {
         mat4 a = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3};
         mat4 b = {2, 7, 1, 8, 2, 8, 1, 8, 2, 8, 4, 5, 9, 0, 4, 5};
         mat4 c = {118, 124, 99, 76, 123, 133, 101, 82, 111, 121, 89, 97, 92, 56, 101, 56};
 
-        ASSERT(mat4_fuzz_eq(mat4_mult(a, b), c));
-        ASSERT(mat4_fuzz_eq(mat4_mult(a, MAT4_IDENTITY), a));
+        ASSERT(mat4_fuzz_eq(mat4_mul(a, b), c));
+        ASSERT(mat4_fuzz_eq(mat4_mul(a, MAT4_IDENTITY), a));
 
         return true;
 }
 
 bool linalgebra_suite() {
         RUN_TEST(test_vec3_add);
-        RUN_TEST(test_mat4_mult);
+        RUN_TEST(test_mat4_mul);
         RUN_TEST(test_mat4_mul_vec);
         return true;
 }

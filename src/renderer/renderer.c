@@ -4,6 +4,8 @@
 #include "command.h"
 #include "descriptors.h"
 #include "image.h"
+#include "material.h"
+#include "pipeline.h"
 
 #include "common/array.h"
 #include "common/util.h"
@@ -58,14 +60,13 @@ VkDescriptorSetLayout g_IntermediateImageDescriptorLayout;
 VkDescriptorSet g_IntermediateImageDescriptors;
 
 ComputePipeline g_GradientPipeline;
-GraphicsPipeline g_TrianglePipeline;
-GraphicsPipeline g_MeshPipeline;
+GraphicsPipeline g_PbrPipeline;
 
 GraphicsPipeline *g_ActiveGraphicsPipeline;
 
 Model g_Model;
 
-MeshBuffer g_RectangleMesh;
+MeshBuffer *g_MeshBuffers;
 
 vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
 vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
@@ -76,12 +77,18 @@ uint32_t g_Height;
 
 AllocatedImage g_ErrorTexture;
 
+Material g_DefaultMaterial;
+
 VkSampler g_LinearSampler;
 VkSampler g_NearestSampler;
 
-bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
+size_t mesh_buffer_create(Mesh *mesh) {
         const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
         const size_t index_buffer_size = sizeof(uint32_t) * array_length(mesh->indices);
+
+        size_t index = array_length(g_MeshBuffers);
+        array_append(g_MeshBuffers, (MeshBuffer){0});
+        MeshBuffer *buffer = &g_MeshBuffers[index];
 
         buffer_create(g_Allocator, vertex_buffer_size,
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -117,7 +124,7 @@ bool mesh_buffer_create(Mesh *mesh, MeshBuffer *buffer) {
         immediate_command_end(&g_ImmediateCommand);
 
         buffer_destroy(&staging_buffer);
-        return true;
+        return index;
 }
 
 void mesh_buffer_destroy(MeshBuffer *buffer) {
@@ -165,23 +172,41 @@ bool frame_resources_create(FrameResources *f) {
 
         EXPECT(buffer_create(g_Allocator, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
+        EXPECT(buffer_create(g_Allocator, sizeof(Instance) * MAX_INSTANCES,
+                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, &f->instance_buffer));
 
         VkDescriptorBufferInfo camera_info = {
             .buffer = f->camera_uniform.buffer,
             .offset = 0,
             .range = sizeof(CameraData),
         };
-
-        VkWriteDescriptorSet write_set = {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
-            .dstSet = f->global_descriptors,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .pBufferInfo = &camera_info,
+        VkDescriptorBufferInfo instance_info = {
+            .buffer = f->instance_buffer.buffer,
+            .offset = 0,
+            .range = sizeof(Instance) * MAX_INSTANCES,
         };
 
-        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+        VkWriteDescriptorSet write_sets[] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 0,
+                .dstSet = f->global_descriptors,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &camera_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 1,
+                .dstSet = f->mat_descriptors,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &instance_info,
+            },
+        };
+
+        vkUpdateDescriptorSets(g_Device, 2, write_sets, 0, NULL);
 
         return true;
 }
@@ -198,6 +223,7 @@ void frame_resources_destroy(FrameResources *f) {
         vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
+        buffer_destroy(&f->instance_buffer);
 }
 
 bool frame_resources_submit(FrameResources *f) {
@@ -234,198 +260,6 @@ bool frame_resources_submit(FrameResources *f) {
 
         VK_EXPECT(vkQueueSubmit2(g_GraphicsQueue, 1, &submit_info, f->render_fence));
         return true;
-}
-
-///////////////////////////////////////
-/// Compute Pipeline
-///////////////////////////////////////
-
-bool compute_pipeline_create(ComputePipelineInfo *info, ComputePipeline *p) {
-        VkPushConstantRange *ranges =
-            malloc(info->num_push_constant_sizes * sizeof(VkPushConstantRange));
-
-        for (uint32_t i = 0; i < info->num_push_constant_sizes; i += 1) {
-                ranges[i].size = info->push_constant_sizes[i];
-                ranges[i].offset = 0;
-                ranges[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        }
-
-        VkPipelineLayoutCreateInfo layout_create_info = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .pSetLayouts = info->descriptors,
-            .setLayoutCount = info->num_descriptors,
-            .pPushConstantRanges = ranges,
-            .pushConstantRangeCount = info->num_push_constant_sizes,
-        };
-
-        VkResult result = vkCreatePipelineLayout(g_Device, &layout_create_info, NULL, &p->layout);
-        free(ranges);
-        VK_EXPECT(result);
-
-        VkShaderModule compute;
-        EXPECT(create_shader_module(info->shader_source, info->shader_source_size, &compute));
-
-        VkComputePipelineCreateInfo pipeline_info = {
-            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-            .stage =
-                {
-                    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                    .module = compute,
-                    .pName = "main",
-                },
-            .layout = p->layout,
-        };
-
-        result = vkCreateComputePipelines(g_Device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
-                                          &p->pipeline);
-        vkDestroyShaderModule(g_Device, compute, NULL);
-        VK_EXPECT(result);
-        return true;
-}
-
-void compute_pipeline_destroy(ComputePipeline *p) {
-        vkDestroyPipelineLayout(g_Device, p->layout, NULL);
-        vkDestroyPipeline(g_Device, p->pipeline, NULL);
-}
-
-///////////////////////////////////////
-/// Graphics Pipeline
-///////////////////////////////////////
-
-bool graphics_pipeline_create(GraphicsPipelineCreateInfo *create_info, GraphicsPipeline *pipeline) {
-        VkPipelineViewportStateCreateInfo viewport = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-            .viewportCount = 1,
-            .scissorCount = 1,
-        };
-
-        VkPipelineColorBlendAttachmentState color_attachment = {
-            .blendEnable = VK_FALSE,
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-        };
-
-        VkPipelineColorBlendStateCreateInfo color_blend = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            .logicOpEnable = VK_FALSE,
-            .logicOp = VK_LOGIC_OP_COPY,
-            .attachmentCount = 1,
-            .pAttachments = &color_attachment,
-        };
-
-        VkPipelineDepthStencilStateCreateInfo depth_testing = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable = create_info->depth_testing,
-            .depthWriteEnable = create_info->depth_testing,
-            .depthCompareOp = create_info->depth_compare_op,
-            .front = {},
-            .back = {},
-            .minDepthBounds = 0.0f,
-            .maxDepthBounds = 1.0f,
-        };
-
-        VkPipelineVertexInputStateCreateInfo vertex_input = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        };
-
-        VkPipelineInputAssemblyStateCreateInfo input_assembly = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            .primitiveRestartEnable = VK_FALSE,
-            .topology = create_info->topology,
-        };
-
-        VkPipelineMultisampleStateCreateInfo multisample = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .sampleShadingEnable = VK_FALSE,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-            .minSampleShading = 1.0f,
-            .alphaToCoverageEnable = VK_FALSE,
-            .alphaToOneEnable = VK_FALSE,
-        };
-
-        VkPipelineRenderingCreateInfo render_info = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &create_info->color_attachment_format,
-            .depthAttachmentFormat = create_info->depth_attachment_format,
-        };
-
-        VkPipelineRasterizationStateCreateInfo rasterization = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            .polygonMode = create_info->polygon_mode,
-            .lineWidth = 1.0f,
-            .cullMode = create_info->cull_mode,
-            .frontFace = create_info->front_face,
-        };
-
-        VkDynamicState state[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-        VkPipelineDynamicStateCreateInfo dynamic_state = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-            .dynamicStateCount = 2,
-            .pDynamicStates = state,
-        };
-
-        VkShaderModule vertex;
-        VkShaderModule fragment;
-        EXPECT(create_shader_module(create_info->vertex_shader, create_info->vertex_shader_size,
-                                    &vertex));
-        EXPECT(create_shader_module(create_info->fragment_shader, create_info->fragment_shader_size,
-                                    &fragment));
-
-        VkPipelineShaderStageCreateInfo shaders[] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                .module = vertex,
-                .pName = "main",
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = fragment,
-                .pName = "main",
-            },
-        };
-
-        VkPipelineLayoutCreateInfo layout_info = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .pSetLayouts = create_info->descriptors,
-            .setLayoutCount = create_info->num_descriptors,
-            .pPushConstantRanges = create_info->push_constants,
-            .pushConstantRangeCount = create_info->num_push_constants,
-        };
-
-        VK_EXPECT(vkCreatePipelineLayout(g_Device, &layout_info, NULL, &pipeline->layout));
-
-        VkGraphicsPipelineCreateInfo pipeline_info = {
-            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            .stageCount = 2,
-            .pStages = shaders,
-            .pVertexInputState = &vertex_input,
-            .pInputAssemblyState = &input_assembly,
-            .pViewportState = &viewport,
-            .pRasterizationState = &rasterization,
-            .pMultisampleState = &multisample,
-            .pColorBlendState = &color_blend,
-            .pDepthStencilState = &depth_testing,
-            .layout = pipeline->layout,
-            .pDynamicState = &dynamic_state,
-            .pNext = &render_info,
-        };
-
-        VK_EXPECT(vkCreateGraphicsPipelines(g_Device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
-                                            &pipeline->pipeline));
-
-        vkDestroyShaderModule(g_Device, vertex, NULL);
-        vkDestroyShaderModule(g_Device, fragment, NULL);
-
-        return true;
-}
-
-void graphics_pipeline_destroy(GraphicsPipeline *pipeline) {
-        vkDestroyPipelineLayout(g_Device, pipeline->layout, NULL);
-        vkDestroyPipeline(g_Device, pipeline->pipeline, NULL);
 }
 
 ///////////////////////////////////////
@@ -607,48 +441,24 @@ bool RendererInit(RendererCreateInfo *c) {
             .shader_source = (const uint32_t *)gradient_comp,
             .shader_source_size = gradient_size / 4,
         };
-        EXPECT(compute_pipeline_create(&pipeline_info, &g_GradientPipeline));
+        EXPECT(compute_pipeline_create(g_Device, &pipeline_info, &g_GradientPipeline));
 
         free(gradient_comp);
 
-        VkPushConstantRange push_constants[] = {
-            {
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-                .offset = 0,
-                .size = sizeof(MeshPushConstants),
-            },
-        };
+        g_PbrPipeline =
+            create_pbr_pipeline(g_Device, g_GlobalDescriptorLayout, g_MaterialDescriptorLayout,
+                                g_IntermediateImage.image.format);
 
-        size_t vert_size, frag_size;
-        char *vert = ReadFile("shaders/colored_triangle_mesh.vert.spv", &vert_size);
-        char *frag = ReadFile("shaders/colored_triangle.frag.spv", &frag_size);
+        g_MeshBuffers = array(MeshBuffer);
 
-        VkDescriptorSetLayout layouts[] = {g_GlobalDescriptorLayout, g_MaterialDescriptorLayout};
-        GraphicsPipelineCreateInfo mesh_pipeline_info = {
-            .descriptors = layouts,
-            .num_descriptors = 2,
-            .push_constants = push_constants,
-            .num_push_constants = 1,
-            .vertex_shader = (const uint32_t *)vert,
-            .vertex_shader_size = vert_size / 4,
-            .fragment_shader = (const uint32_t *)frag,
-            .fragment_shader_size = frag_size / 4,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            .polygon_mode = VK_POLYGON_MODE_FILL,
-            .cull_mode = VK_CULL_MODE_BACK_BIT,
-            .front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            .color_attachment_format = g_IntermediateImage.image.format,
-            .depth_attachment_format = VK_FORMAT_D32_SFLOAT,
-            .depth_testing = true,
-            .depth_compare_op = VK_COMPARE_OP_LESS,
-        };
-        EXPECT(graphics_pipeline_create(&mesh_pipeline_info, &g_MeshPipeline));
+        // g_Model = load_model("assets/objs/city/center-city/Center_City_Sci-Fi.obj");
+        g_Model = load_model("assets/objs/stone-golem.obj");
+        // g_Model = load_model("assets/objs/Untitled.obj");
 
-        EXPECT(init_textures());
+        printf("model materials: %zu\n", array_length(g_Model.materials));
 
-        g_Model = load_model("assets/objs/Tree_V10_Final.obj");
-
-        mesh_buffer_create(g_Model.meshes, &g_RectangleMesh);
+        mesh_buffer_create(g_Model.meshes);
+        EXPECT(init_textures(g_Model.materials));
 
         return true;
 }
@@ -658,9 +468,8 @@ void RendererShutdown() {
         // Make sure the GPU has finished all work
         vkDeviceWaitIdle(g_Device);
 
-        compute_pipeline_destroy(&g_GradientPipeline);
-        graphics_pipeline_destroy(&g_TrianglePipeline);
-        graphics_pipeline_destroy(&g_MeshPipeline);
+        compute_pipeline_destroy(&g_GradientPipeline, g_Device);
+        graphics_pipeline_destroy(&g_PbrPipeline, g_Device);
 
         allocated_image_destroy(&g_ErrorTexture, g_Device);
         vkDestroySampler(g_Device, g_LinearSampler, NULL);
@@ -668,7 +477,11 @@ void RendererShutdown() {
 
         allocated_image_destroy(&g_IntermediateImage, g_Device);
         allocated_image_destroy(&g_DepthImage, g_Device);
-        mesh_buffer_destroy(&g_RectangleMesh);
+
+        for (int i = 0; i < array_length(g_MeshBuffers); i += 1) {
+                mesh_buffer_destroy(&g_MeshBuffers[i]);
+        }
+        array_free(g_MeshBuffers);
 
         swapchain_destroy();
         immediate_command_destroy(&g_ImmediateCommand);
@@ -815,7 +628,7 @@ void DrawCommandBindTexture(Image *image) {
 }
 
 void DrawCommandSetGraphicsPushConstants(size_t offset, size_t size, void *data) {
-        vkCmdPushConstants(g_CurrentFrameResources->command, g_MeshPipeline.layout,
+        vkCmdPushConstants(g_CurrentFrameResources->command, g_ActiveGraphicsPipeline->layout,
                            VK_SHADER_STAGE_VERTEX_BIT, offset, size, data);
 }
 
@@ -916,31 +729,43 @@ void RendererDraw() {
                          VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
         DrawCommandBeginRendering(&g_IntermediateImage.image);
-        // DrawCommandBindGraphicsPipeline(&g_TrianglePipeline);
-        //
-        // vkCmdDraw(g_CurrentFrameResources->command, 3, 1, 0, 0);
 
         // mesh pipeline
-        DrawCommandBindGraphicsPipeline(&g_MeshPipeline);
+        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
 
         mat4 view = mat4_look_at(g_CameraPosition,
                                  vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
         mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
-        mat4 viewproj = mat4_mult(proj, view);
+        mat4 viewproj = mat4_mul(proj, view);
 
         CameraData camera = {.view = view, .proj = view, .viewproj = viewproj};
         DrawCommandSetCameraData(&camera);
 
-        MeshPushConstants push_constants = {
-            .matrix = MAT4_IDENTITY,
-            .vertex_address = g_RectangleMesh.vertex_address,
-        };
-        DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
+        void *instances;
+        vmaMapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation, &instances);
+
+        Instance *ssbo = (Instance *)instances;
+
+        for (int x = -20; x <= 20; x += 1) {
+                for (int z = 0; z < 40; z += 1) {
+                        int i = (x + 20) * 40 + z;
+                        ssbo[i] = (Instance){
+                            .model = mat4_translate(MAT4_IDENTITY, (vec3){x * 2, 0, -z}),
+                            .vertex_address = g_MeshBuffers[0].vertex_address,
+                            .tex_index = 0,
+                        };
+                }
+        }
+
+        vmaFlushAllocation(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation, 0,
+                           VK_WHOLE_SIZE);
+        vmaUnmapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation);
+        // // DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
         DrawCommandBindTexture(&g_ErrorTexture.image);
 
-        DrawCommandBindIndexBuffer(&g_RectangleMesh);
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices), 1,
-                         0, 0, 0);
+        DrawCommandBindIndexBuffer(&g_MeshBuffers[0]);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices),
+                         41 * 40, 0, 0, 0);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 
@@ -954,16 +779,9 @@ void MoveCamera(vec3 delta) {
         g_CameraPosition = vec3_add(g_CameraPosition, relative);
 }
 
-bool init_textures() {
-        uint32_t checkerboard[4] = {
-            0xFFFF00FF,
-            0x000000FF,
-            0xFFFF00FF,
-            0x000000FF,
-        };
-
+bool init_textures(MaterialInfo *mats) {
         AllocatedImageCreateInfo create_info = {
-            .extent = (VkExtent3D){2, 2, 1},
+            .extent = (VkExtent3D){mats->diffuse_width, mats->diffuse_height, 1},
             .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
             .format = VK_FORMAT_R8G8B8A8_UNORM,
             .usage_flags = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -973,7 +791,7 @@ bool init_textures() {
             .device = g_Device,
             .allocator = g_Allocator,
 
-            .data = checkerboard,
+            .data = (uint32_t *)mats->diffuse_tex,
             .imm = &g_ImmediateCommand,
         };
         EXPECT(allocated_image_create(&create_info, &g_ErrorTexture));
@@ -1027,13 +845,21 @@ bool init_descriptors() {
         }};
         EXPECT(create_descriptor_layout(global_descriptor_bindings, 1, &g_GlobalDescriptorLayout));
 
-        VkDescriptorSetLayoutBinding mat_bindings[] = {{
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-        }};
-        EXPECT(create_descriptor_layout(mat_bindings, 1, &g_MaterialDescriptorLayout));
+        VkDescriptorSetLayoutBinding mat_bindings[] = {
+            {
+                .binding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
+            {
+                .binding = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            },
+        };
+        EXPECT(create_descriptor_layout(mat_bindings, 2, &g_MaterialDescriptorLayout));
 
         VkDescriptorImageInfo image_info = {
             .sampler = VK_NULL_HANDLE,
@@ -1157,6 +983,7 @@ bool is_gpu_suitable(VkPhysicalDevice gpu) {
         VkPhysicalDeviceVulkan13Features f13 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = &f12};
         VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                       .features.robustBufferAccess = VK_TRUE,
                                        .pNext = &f13};
 
         vkGetPhysicalDeviceProperties(gpu, &p);
@@ -1265,17 +1092,6 @@ bool begin_command_buffer(VkCommandBuffer command) {
         VK_EXPECT(vkResetCommandBuffer(command, 0));
         VK_EXPECT(vkBeginCommandBuffer(command, &info));
 
-        return true;
-}
-
-bool create_shader_module(const uint32_t *bytes, size_t len, VkShaderModule *module) {
-        VkShaderModuleCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .pCode = bytes,
-            .codeSize = len * sizeof(uint32_t),
-        };
-
-        VK_EXPECT(vkCreateShaderModule(g_Device, &create_info, NULL, module));
         return true;
 }
 
