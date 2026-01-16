@@ -36,6 +36,7 @@ uint32_t g_SwapchainFrameIndex;
 Image *g_SwapchainImages;
 FrameResources *g_SwapchainFrameResources;
 const VkFormat g_SwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+const uint32_t NUM_FRAMES = 3;
 
 // A reference to the current swapchain image
 Image *g_CurrentSwapchainImage;
@@ -51,13 +52,13 @@ ImmediateCommand g_ImmediateCommand;
 
 DescriptorAllocator g_DescriptorAllocator;
 
-VkDescriptorSetLayout g_GlobalDescriptorLayout;
+DescriptorLayout g_GlobalDescriptorLayout;
 VkDescriptorSetLayout g_MaterialDescriptorLayout;
 
 AllocatedImage g_IntermediateImage;
 AllocatedImage g_DepthImage;
-VkDescriptorSetLayout g_IntermediateImageDescriptorLayout;
-VkDescriptorSet g_IntermediateImageDescriptors;
+DescriptorLayout g_IntermediateImageDescriptorLayout;
+Descriptor g_IntermediateImageDescriptors;
 
 ComputePipeline g_GradientPipeline;
 GraphicsPipeline g_PbrPipeline;
@@ -164,55 +165,17 @@ bool frame_resources_create(FrameResources *f) {
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
 
-        uint32_t count = MAX_TEXTURES / 4;
-        VkDescriptorSetVariableDescriptorCountAllocateInfo count_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO,
-            .descriptorSetCount = 1,
-            .pDescriptorCounts = &count,
-        };
-
-        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout, 1,
-                                             &f->global_descriptors, &count_info));
-        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator, &g_MaterialDescriptorLayout, 1,
-                                             &f->mat_descriptors, NULL));
-
         EXPECT(buffer_create(g_Allocator, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
         EXPECT(buffer_create(g_Allocator, sizeof(Instance) * MAX_INSTANCES,
                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, &f->instance_buffer));
 
-        VkDescriptorBufferInfo camera_info = {
-            .buffer = f->camera_uniform.buffer,
-            .offset = 0,
-            .range = sizeof(CameraData),
-        };
-        VkDescriptorBufferInfo instance_info = {
-            .buffer = f->instance_buffer.buffer,
-            .offset = 0,
-            .range = sizeof(Instance) * MAX_INSTANCES,
-        };
+        f->global_descriptors =
+            descriptor_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout);
 
-        VkWriteDescriptorSet write_sets[] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 0,
-                .dstSet = f->global_descriptors,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &camera_info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 1,
-                .dstSet = f->global_descriptors,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .pBufferInfo = &instance_info,
-            },
-        };
-
-        vkUpdateDescriptorSets(g_Device, 2, write_sets, 0, NULL);
+        descriptor_write_buffer(f->global_descriptors, &f->camera_uniform, 0);
+        descriptor_write_buffer(f->global_descriptors, &f->instance_buffer, 1);
 
         return true;
 }
@@ -225,8 +188,9 @@ void frame_resources_destroy(FrameResources *f) {
 
         vkDestroyCommandPool(g_Device, f->pool, NULL);
 
-        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->global_descriptors);
-        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->mat_descriptors);
+        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1,
+                             &f->global_descriptors.descriptor);
+        // vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
         buffer_destroy(&f->instance_buffer);
@@ -281,7 +245,7 @@ bool swapchain_create() {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .surface = g_Surface,
             .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-            .minImageCount = capabilities.minImageCount + 1,
+            .minImageCount = NUM_FRAMES,
             .imageFormat = g_SwapchainFormat,
             .imageExtent = extent,
             .imageArrayLayers = 1,
@@ -440,7 +404,7 @@ bool RendererInit(RendererCreateInfo *c) {
 
         uint32_t sizes[] = {sizeof(float) * 16};
         ComputePipelineInfo pipeline_info = {
-            .descriptors = &g_IntermediateImageDescriptorLayout,
+            .descriptors = &g_IntermediateImageDescriptorLayout.layout,
             .num_descriptors = 1,
             .push_constant_sizes = sizes,
             .num_push_constant_sizes = 1,
@@ -452,8 +416,8 @@ bool RendererInit(RendererCreateInfo *c) {
         free(gradient_comp);
 
         g_PbrPipeline =
-            create_pbr_pipeline(g_Device, g_GlobalDescriptorLayout, g_MaterialDescriptorLayout,
-                                g_IntermediateImage.image.format);
+            create_pbr_pipeline(g_Device, g_GlobalDescriptorLayout.layout,
+                                g_MaterialDescriptorLayout, g_IntermediateImage.image.format);
 
         g_MeshBuffers = array(MeshBuffer);
         g_Textures = array(AllocatedImage);
@@ -498,9 +462,9 @@ void RendererShutdown() {
         immediate_command_destroy(&g_ImmediateCommand);
 
         descriptor_allocator_destroy(&g_DescriptorAllocator);
-        vkDestroyDescriptorSetLayout(g_Device, g_IntermediateImageDescriptorLayout, NULL);
-        vkDestroyDescriptorSetLayout(g_Device, g_GlobalDescriptorLayout, NULL);
-        vkDestroyDescriptorSetLayout(g_Device, g_MaterialDescriptorLayout, NULL);
+        descriptor_layout_destroy(&g_GlobalDescriptorLayout);
+        descriptor_layout_destroy(&g_IntermediateImageDescriptorLayout);
+        // vkDestroyDescriptorSetLayout(g_Device, g_MaterialDescriptorLayout, NULL);
 
         vmaDestroyAllocator(g_Allocator);
 
@@ -607,7 +571,7 @@ void DrawCommandSetCameraData(CameraData *camera) {
 
         vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 g_ActiveGraphicsPipeline->layout, 0, 1,
-                                &g_CurrentFrameResources->global_descriptors, 0, NULL);
+                                &g_CurrentFrameResources->global_descriptors.descriptor, 0, NULL);
 }
 
 void DrawCommandBindTexture(Image *image) {
@@ -703,7 +667,8 @@ void RendererDraw() {
         image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
                          VK_IMAGE_LAYOUT_GENERAL);
         DrawCommandBindCompute(&g_GradientPipeline);
-        DrawCommandBindComputeDescriptor(&g_GradientPipeline, g_IntermediateImageDescriptors, 0);
+        DrawCommandBindComputeDescriptor(&g_GradientPipeline,
+                                         g_IntermediateImageDescriptors.descriptor, 0);
 
         struct {
                 vec4 top;
@@ -742,12 +707,15 @@ void RendererDraw() {
 
         for (int x = -20; x <= 20; x += 1) {
                 for (int z = 0; z < 40; z += 1) {
-                        int i = (x + 20) * 40 + z;
-                        ssbo[i] = (Instance){
-                            .model = mat4_translate(MAT4_IDENTITY, (vec3){x * 2, 0, -z}),
-                            .vertex_address = g_MeshBuffers[0].vertex_address,
-                            .tex_index = 0,
-                        };
+                        for (int y = 0; y < 2; y += 1) {
+                                int i = ((x + 20) * 40 + z) * 2 + y;
+                                ssbo[i] = (Instance){
+                                    .model =
+                                        mat4_translate(MAT4_IDENTITY, (vec3){x * 2, y * 2, -z}),
+                                    .vertex_address = g_MeshBuffers[0].vertex_address,
+                                    .tex_index = 0,
+                                };
+                        }
                 }
         }
 
@@ -755,11 +723,11 @@ void RendererDraw() {
                            VK_WHOLE_SIZE);
         vmaUnmapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation);
         // // DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
-        DrawCommandBindTexture(&g_Textures[0].image);
+        // DrawCommandBindTexture(&g_Textures[0].image);
 
         DrawCommandBindIndexBuffer(&g_MeshBuffers[0]);
         vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices),
-                         41 * 40, 0, 0, 0);
+                         41 * 40 * 2, 0, 0, 0);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 
@@ -816,7 +784,8 @@ bool init_textures(MaterialInfo *mats) {
                 VkWriteDescriptorSet write_set = {
                     .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .dstBinding = 2,
-                    .dstSet = g_SwapchainFrameResources[i].global_descriptors,
+                    .dstArrayElement = 0,
+                    .dstSet = g_SwapchainFrameResources[i].global_descriptors.descriptor,
                     .descriptorCount = 1,
                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                     .pImageInfo = &image_info,
@@ -838,71 +807,39 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
 }
 
 bool init_descriptors() {
+        descriptor_allocator_init(&g_DescriptorAllocator, NUM_FRAMES);
+
+        DescriptorBinding draw_image_bindings[1] = {
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_COMPUTE_BIT},
+        };
+
+        descriptor_allocator_reserve(&g_DescriptorAllocator, draw_image_bindings, 1, false);
+        g_IntermediateImageDescriptorLayout =
+            descriptor_layout_create(g_Device, draw_image_bindings, 1);
+
+        DescriptorBinding global_bindings[3] = {
+            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_VERTEX_BIT},
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_VERTEX_BIT},
+            {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .count = MAX_TEXTURES,
+             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+             .variable = true},
+        };
+
+        descriptor_allocator_reserve(&g_DescriptorAllocator, global_bindings, 3, true);
+        g_GlobalDescriptorLayout = descriptor_layout_create(g_Device, global_bindings, 3);
+
         EXPECT(descriptor_allocator_create(g_Device, &g_DescriptorAllocator));
+        g_IntermediateImageDescriptors =
+            descriptor_allocate(&g_DescriptorAllocator, &g_IntermediateImageDescriptorLayout);
 
-        VkDescriptorSetLayoutBinding bindings[] = {
-            {
-                .binding = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-            },
-        };
-        EXPECT(create_descriptor_layout(bindings, sizeof(bindings) / sizeof(*bindings),
-                                        &g_IntermediateImageDescriptorLayout, NULL));
-        EXPECT(descriptor_allocator_allocate(&g_DescriptorAllocator,
-                                             &g_IntermediateImageDescriptorLayout, 1,
-                                             &g_IntermediateImageDescriptors, NULL));
-
-        VkDescriptorSetLayoutBinding global_descriptor_bindings[] = {
-            {
-                .binding = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-            },
-            {
-                .binding = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-            },
-            {
-                .binding = 2,
-                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .descriptorCount = MAX_TEXTURES,
-                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-            },
-        };
-        VkDescriptorBindingFlags flags[] = {
-            0,
-            0,
-            VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-                VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT,
-        };
-        EXPECT(create_descriptor_layout(global_descriptor_bindings, 3, &g_GlobalDescriptorLayout,
-                                        flags));
-
-        VkDescriptorSetLayoutBinding mat_bindings[] = {};
-        EXPECT(create_descriptor_layout(mat_bindings, 0, &g_MaterialDescriptorLayout, NULL));
-
-        VkDescriptorImageInfo image_info = {
-            .sampler = VK_NULL_HANDLE,
-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .imageView = g_IntermediateImage.image.image_view,
-        };
-
-        VkWriteDescriptorSet write_set = {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
-            .dstSet = g_IntermediateImageDescriptors,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .pImageInfo = &image_info,
-        };
-
-        vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+        descriptor_write_image(g_IntermediateImageDescriptors, &g_IntermediateImage.image, 0);
 
         return true;
 }
@@ -1124,26 +1061,5 @@ bool begin_command_buffer(VkCommandBuffer command) {
         VK_EXPECT(vkResetCommandBuffer(command, 0));
         VK_EXPECT(vkBeginCommandBuffer(command, &info));
 
-        return true;
-}
-
-bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
-                              VkDescriptorSetLayout *layout, VkDescriptorBindingFlags *flags) {
-
-        VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-            .bindingCount = count,
-            .pBindingFlags = flags,
-        };
-
-        VkDescriptorSetLayoutCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .pBindings = bindings,
-            .bindingCount = count,
-            .flags = flags ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT : 0,
-            .pNext = flags ? &binding_info : NULL,
-        };
-
-        VK_EXPECT(vkCreateDescriptorSetLayout(g_Device, &create_info, NULL, layout));
         return true;
 }

@@ -163,10 +163,10 @@ GraphicsPipeline create_pbr_pipeline(VkDevice device, VkDescriptorSetLayout glob
         char *vert = ReadFile("shaders/mesh.vert.spv", &vert_size);
         char *frag = ReadFile("shaders/mesh.frag.spv", &frag_size);
 
-        VkDescriptorSetLayout layouts[] = {global, material};
+        VkDescriptorSetLayout layouts[] = {global};
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
             .descriptors = layouts,
-            .num_descriptors = 2,
+            .num_descriptors = 1,
             .push_constants = push_constants,
             .num_push_constants = 1,
             .vertex_shader = (const uint32_t *)vert,

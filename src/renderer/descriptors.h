@@ -2,22 +2,58 @@
 
 #include "vkb.h"
 
+#include "buffer.h"
+#include "image.h"
+
 #include <stdbool.h>
+
+typedef struct {
+        VkDescriptorType type;
+        VkShaderStageFlags stage;
+        uint32_t count;
+        bool variable;
+} DescriptorBinding;
+
+typedef struct {
+        VkDescriptorSetLayout layout;
+        VkDescriptorType *binding_types;
+        uint32_t *binding_counts;
+        bool *variable;
+
+        VkDevice device;
+} DescriptorLayout;
+
+DescriptorLayout descriptor_layout_create(VkDevice device, DescriptorBinding *bindings,
+                                          uint32_t count);
+
+void descriptor_layout_destroy(DescriptorLayout *layout);
 
 typedef struct {
         VkDescriptorPool pool;
 
+        VkDescriptorPoolSize *pool_sizes;
+        uint32_t num_frames;
+
         VkDevice device;
 } DescriptorAllocator;
 
-bool descriptor_allocator_create(VkDevice device, DescriptorAllocator *allocator);
+void descriptor_allocator_init(DescriptorAllocator *allocator, uint32_t num_frames);
 
 void descriptor_allocator_destroy(DescriptorAllocator *allocator);
 
 void descriptor_allocator_clear(DescriptorAllocator *allocator);
 
-bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDescriptorSetLayout *layouts,
-                                   uint32_t count, VkDescriptorSet *sets, void *pNext);
+void descriptor_allocator_reserve(DescriptorAllocator *allocator, DescriptorBinding *bindings,
+                                  uint32_t count, bool per_frame_descriptor);
 
-bool create_descriptor_pool(VkDevice device, VkDescriptorPoolSize *sizes, uint32_t count,
-                            VkDescriptorPool *pool);
+bool descriptor_allocator_create(VkDevice device, DescriptorAllocator *allocator);
+
+typedef struct {
+        DescriptorLayout *layout;
+        VkDescriptorSet descriptor;
+} Descriptor;
+
+Descriptor descriptor_allocate(DescriptorAllocator *allocator, DescriptorLayout *layout);
+
+void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding);
+void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding);

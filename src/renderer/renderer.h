@@ -4,6 +4,7 @@
 #include "model/model.h"
 
 #include "buffer.h"
+#include "descriptors.h"
 
 #include "vkb.h"
 
@@ -56,7 +57,7 @@ typedef struct {
         Buffer camera_uniform;
         Buffer instance_buffer;
 
-        VkDescriptorSet global_descriptors;
+        Descriptor global_descriptors;
         VkDescriptorSet mat_descriptors;
 } FrameResources;
 
@@ -114,6 +115,3 @@ bool select_gpu();
 bool create_device();
 
 bool begin_command_buffer(VkCommandBuffer command);
-
-bool create_descriptor_layout(VkDescriptorSetLayoutBinding *bindings, uint32_t count,
-                              VkDescriptorSetLayout *layout, VkDescriptorBindingFlags *flags);
