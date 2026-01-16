@@ -166,7 +166,8 @@ Descriptor descriptor_allocate(DescriptorAllocator *allocator, DescriptorLayout 
         return r;
 }
 
-void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding) {
+void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding,
+                            uint32_t arr_index) {
         VkDescriptorImageInfo image_info = {
             .sampler = VK_NULL_HANDLE,
             .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
@@ -175,8 +176,9 @@ void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t bindin
 
         VkWriteDescriptorSet write_set = {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
+            .dstBinding = binding,
             .dstSet = descriptor.descriptor,
+            .dstArrayElement = arr_index,
             .descriptorCount = 1,
             .descriptorType = descriptor.layout->binding_types[binding],
             .pImageInfo = &image_info,
@@ -185,7 +187,29 @@ void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t bindin
         vkUpdateDescriptorSets(descriptor.layout->device, 1, &write_set, 0, NULL);
 }
 
-void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding) {
+void descriptor_write_texture(Descriptor descriptor, Image *image, uint32_t binding,
+                              uint32_t arr_index, VkSampler sampler) {
+        VkDescriptorImageInfo image_info = {
+            .sampler = sampler,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .imageView = image->image_view,
+        };
+
+        VkWriteDescriptorSet write_set = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = binding,
+            .dstSet = descriptor.descriptor,
+            .dstArrayElement = arr_index,
+            .descriptorCount = 1,
+            .descriptorType = descriptor.layout->binding_types[binding],
+            .pImageInfo = &image_info,
+        };
+
+        vkUpdateDescriptorSets(descriptor.layout->device, 1, &write_set, 0, NULL);
+}
+
+void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding,
+                             uint32_t arr_index) {
         VkDescriptorBufferInfo buffer_info = {
             .buffer = buffer->buffer,
             .offset = 0,
@@ -196,6 +220,7 @@ void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t bin
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstBinding = binding,
             .dstSet = descriptor.descriptor,
+            .dstArrayElement = arr_index,
             .descriptorCount = 1,
             .descriptorType = descriptor.layout->binding_types[binding],
             .pBufferInfo = &buffer_info,

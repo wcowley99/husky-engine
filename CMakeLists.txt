@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(
   civ-game
   VERSION 0.0.1
-  LANGUAGES C CXX
+  LANGUAGES C
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -12,24 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Vulkan REQUIRED)
 find_package(SDL3 REQUIRED)
 
-add_subdirectory(external/volk)
-
-add_library(VulkanMemoryAllocator 
-  external/VulkanMemoryAllocator/src/VmaUsage.cpp
-)
-
-target_include_directories(VulkanMemoryAllocator PRIVATE
-  external/VulkanMemoryAllocator/include
-)
-
-target_link_libraries(VulkanMemoryAllocator PRIVATE 
-  Vulkan::Headers
-)
-
-target_compile_definitions(VulkanMemoryAllocator PUBLIC 
-  VMA_STATIC_VULKAN_FUNCTIONS=0
-  VMA_DYANMIC_VULKAN_FUNCTIONS=0
-)
+add_subdirectory(external)
 
 add_library(engine-lib
   src/model/model.c
@@ -52,8 +35,10 @@ add_library(engine-lib
 target_link_libraries(engine-lib PUBLIC
   SDL3::SDL3
   Vulkan::Headers
-  VulkanMemoryAllocator
   volk
+
+  # Vulkan Memory Allocator
+  external
 )
 
 target_include_directories(engine-lib PUBLIC

@@ -55,5 +55,9 @@ typedef struct {
 
 Descriptor descriptor_allocate(DescriptorAllocator *allocator, DescriptorLayout *layout);
 
-void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding);
-void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding);
+void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding,
+                            uint32_t arr_index);
+void descriptor_write_texture(Descriptor descriptor, Image *image, uint32_t binding,
+                              uint32_t arr_index, VkSampler sampler);
+void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding,
+                             uint32_t arr_index);

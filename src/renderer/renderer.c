@@ -174,8 +174,8 @@ bool frame_resources_create(FrameResources *f) {
         f->global_descriptors =
             descriptor_allocate(&g_DescriptorAllocator, &g_GlobalDescriptorLayout);
 
-        descriptor_write_buffer(f->global_descriptors, &f->camera_uniform, 0);
-        descriptor_write_buffer(f->global_descriptors, &f->instance_buffer, 1);
+        descriptor_write_buffer(f->global_descriptors, &f->camera_uniform, 0, 0);
+        descriptor_write_buffer(f->global_descriptors, &f->instance_buffer, 1, 0);
 
         return true;
 }
@@ -775,23 +775,8 @@ bool init_textures(MaterialInfo *mats) {
         vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
 
         for (int i = 0; i < g_SwapchainImageCount; i += 1) {
-                VkDescriptorImageInfo image_info = {
-                    .sampler = g_LinearSampler,
-                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    .imageView = g_Textures[index].image.image_view,
-                };
-
-                VkWriteDescriptorSet write_set = {
-                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .dstBinding = 2,
-                    .dstArrayElement = 0,
-                    .dstSet = g_SwapchainFrameResources[i].global_descriptors.descriptor,
-                    .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                    .pImageInfo = &image_info,
-                };
-
-                vkUpdateDescriptorSets(g_Device, 1, &write_set, 0, NULL);
+                descriptor_write_texture(g_SwapchainFrameResources[i].global_descriptors,
+                                         &g_Textures[index].image, 2, 0, g_LinearSampler);
         }
 
         return true;
@@ -839,7 +824,7 @@ bool init_descriptors() {
         g_IntermediateImageDescriptors =
             descriptor_allocate(&g_DescriptorAllocator, &g_IntermediateImageDescriptorLayout);
 
-        descriptor_write_image(g_IntermediateImageDescriptors, &g_IntermediateImage.image, 0);
+        descriptor_write_image(g_IntermediateImageDescriptors, &g_IntermediateImage.image, 0, 0);
 
         return true;
 }
