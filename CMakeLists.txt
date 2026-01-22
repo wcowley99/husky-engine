@@ -45,6 +45,7 @@ target_include_directories(engine-lib PUBLIC
   external/VulkanMemoryAllocator/include
   external/volk
   external/stb
+  external/cgltf
   ${CMAKE_BINARY_DIR}
 
   src

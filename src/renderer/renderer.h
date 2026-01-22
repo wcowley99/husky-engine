@@ -5,6 +5,7 @@
 
 #include "buffer.h"
 #include "descriptors.h"
+#include "material.h"
 
 #include "vkb.h"
 
@@ -41,7 +42,7 @@ typedef struct {
         VkDeviceAddress vertex_address;
 } MeshBuffer;
 
-size_t mesh_buffer_create(Mesh *mesh);
+uint32_t mesh_buffer_create(Mesh *mesh);
 void mesh_buffer_destroy(MeshBuffer *buffer);
 
 ///////////////////////////////////////
@@ -97,7 +98,31 @@ void RendererDraw();
 
 void MoveCamera(vec3 delta);
 
-bool init_textures(MaterialInfo *mats);
+typedef struct {
+        uint32_t mesh;
+        uint32_t tex_index;
+
+        Material *material;
+
+        mat4 transform;
+} RenderObject;
+
+RenderObject gpu_upload_model(Model *model);
+
+uint32_t gpu_upload_texture(MaterialInfo *mats);
+
+typedef struct {
+        uint32_t mesh;
+        Material *material;
+
+        uint32_t first_instance;
+        uint32_t count;
+} DrawBatch;
+
+DrawBatch draw_batch_create(RenderObject *obj, uint32_t first_instance);
+void draw_batch_add(DrawBatch *batch, RenderObject *obj, Instance *ssbo);
+
+void draw_batch_draw(DrawBatch *batch);
 
 // Vulkan Initialization Functions
 
@@ -115,3 +140,5 @@ bool select_gpu();
 bool create_device();
 
 bool begin_command_buffer(VkCommandBuffer command);
+
+void create_samplers();

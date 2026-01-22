@@ -15,3 +15,6 @@ typedef struct {
 bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags,
                    VmaMemoryUsage usage, Buffer *buffer);
 void buffer_destroy(Buffer *buffer);
+
+void *buffer_mmap(Buffer *buffer, VmaAllocator allocator);
+void buffer_munmap(Buffer *buffer, VmaAllocator allocator);

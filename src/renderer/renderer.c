@@ -65,10 +65,11 @@ GraphicsPipeline g_PbrPipeline;
 
 GraphicsPipeline *g_ActiveGraphicsPipeline;
 
-Model g_Model;
-
 MeshBuffer *g_MeshBuffers;
 AllocatedImage *g_Textures;
+
+RenderObject g_RedDemons[10];
+RenderObject g_StoneGolems[10];
 
 vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
 vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
@@ -82,11 +83,11 @@ Material g_DefaultMaterial;
 VkSampler g_LinearSampler;
 VkSampler g_NearestSampler;
 
-size_t mesh_buffer_create(Mesh *mesh) {
+uint32_t mesh_buffer_create(Mesh *mesh) {
         const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
         const size_t index_buffer_size = sizeof(uint32_t) * array_length(mesh->indices);
 
-        size_t index = array_length(g_MeshBuffers);
+        uint32_t index = array_length(g_MeshBuffers);
         array_append(g_MeshBuffers, (MeshBuffer){0});
         MeshBuffer *buffer = &g_MeshBuffers[index];
 
@@ -392,6 +393,8 @@ bool RendererInit(RendererCreateInfo *c) {
         EXPECT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
         EXPECT(allocated_image_create(&depth_image_info, &g_DepthImage));
 
+        create_samplers();
+
         EXPECT(init_descriptors());
 
         EXPECT(swapchain_create());
@@ -423,19 +426,28 @@ bool RendererInit(RendererCreateInfo *c) {
         g_Textures = array(AllocatedImage);
 
         // g_Model = load_model("assets/objs/city/center-city/Center_City_Sci-Fi.obj");
-        g_Model = load_model("assets/objs/stone-golem.obj");
-        // g_Model = load_model("assets/objs/Untitled.obj");
+        // g_Model = load_model("assets/objs/red-demon-tris.obj");
+        Model red_demon = load_model("assets/objs/red-demon.obj");
+        g_RedDemons[0] = gpu_upload_model(&red_demon);
 
-        printf("model materials: %zu\n", array_length(g_Model.materials));
+        Model stone_golem = load_model("assets/objs/stone-golem.obj");
+        g_StoneGolems[0] = gpu_upload_model(&stone_golem);
 
-        mesh_buffer_create(g_Model.meshes);
-        EXPECT(init_textures(g_Model.materials));
+        for (int i = 0; i < 10; i += 1) {
+                g_RedDemons[i] = g_RedDemons[0];
+                g_StoneGolems[i] = g_StoneGolems[0];
+
+                g_RedDemons[i].transform = mat4_translate(MAT4_IDENTITY, (vec3){1, 0, -i});
+                g_StoneGolems[i].transform = mat4_translate(MAT4_IDENTITY, (vec3){-1, 0, -i});
+        }
+
+        model_destroy(red_demon);
+        model_destroy(stone_golem);
 
         return true;
 }
 
 void RendererShutdown() {
-        model_destroy(g_Model);
         // Make sure the GPU has finished all work
         vkDeviceWaitIdle(g_Device);
 
@@ -590,7 +602,7 @@ void DrawCommandSetGraphicsPushConstants(size_t offset, size_t size, void *data)
                            VK_SHADER_STAGE_VERTEX_BIT, offset, size, data);
 }
 
-void DrawCommandBindIndexBuffer(MeshBuffer *mesh) {
+void DrawCommandBindIndexBuffer(const MeshBuffer *mesh) {
         vkCmdBindIndexBuffer(g_CurrentFrameResources->command, mesh->index.buffer, 0,
                              VK_INDEX_TYPE_UINT32);
 }
@@ -700,34 +712,25 @@ void RendererDraw() {
         CameraData camera = {.view = view, .proj = view, .viewproj = viewproj};
         DrawCommandSetCameraData(&camera);
 
-        void *instances;
-        vmaMapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation, &instances);
+        Instance *ssbo =
+            (Instance *)buffer_mmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
 
-        Instance *ssbo = (Instance *)instances;
+        DrawBatch golem_batch = draw_batch_create(g_StoneGolems, 0);
 
-        for (int x = -20; x <= 20; x += 1) {
-                for (int z = 0; z < 40; z += 1) {
-                        for (int y = 0; y < 2; y += 1) {
-                                int i = ((x + 20) * 40 + z) * 2 + y;
-                                ssbo[i] = (Instance){
-                                    .model =
-                                        mat4_translate(MAT4_IDENTITY, (vec3){x * 2, y * 2, -z}),
-                                    .vertex_address = g_MeshBuffers[0].vertex_address,
-                                    .tex_index = 0,
-                                };
-                        }
-                }
+        for (int i = 0; i < 10; i += 1) {
+                draw_batch_add(&golem_batch, &g_StoneGolems[i], ssbo);
         }
 
-        vmaFlushAllocation(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation, 0,
-                           VK_WHOLE_SIZE);
-        vmaUnmapMemory(g_Allocator, g_CurrentFrameResources->instance_buffer.allocation);
-        // // DrawCommandSetGraphicsPushConstants(0, sizeof(MeshPushConstants), &push_constants);
-        // DrawCommandBindTexture(&g_Textures[0].image);
+        DrawBatch demon_batch = draw_batch_create(g_RedDemons, golem_batch.count);
 
-        DrawCommandBindIndexBuffer(&g_MeshBuffers[0]);
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, array_length(g_Model.meshes->indices),
-                         41 * 40 * 2, 0, 0, 0);
+        for (int i = 0; i < 10; i += 1) {
+                draw_batch_add(&demon_batch, &g_RedDemons[i], ssbo);
+        }
+
+        buffer_munmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
+
+        draw_batch_draw(&golem_batch);
+        draw_batch_draw(&demon_batch);
 
         vkCmdEndRendering(g_CurrentFrameResources->command);
 
@@ -741,7 +744,7 @@ void MoveCamera(vec3 delta) {
         g_CameraPosition = vec3_add(g_CameraPosition, relative);
 }
 
-bool init_textures(MaterialInfo *mats) {
+uint32_t gpu_upload_texture(MaterialInfo *mats) {
         AllocatedImageCreateInfo create_info = {
             .extent = (VkExtent3D){mats->diffuse_width, mats->diffuse_height, 1},
             .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -757,29 +760,27 @@ bool init_textures(MaterialInfo *mats) {
             .imm = &g_ImmediateCommand,
         };
 
-        size_t index = array_length(g_Textures);
+        uint32_t index = array_length(g_Textures);
         array_append(g_Textures, (AllocatedImage){0});
         AllocatedImage *image = &g_Textures[index];
-        EXPECT(allocated_image_create(&create_info, image));
-
-        VkSamplerCreateInfo sampler_info = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-
-        sampler_info.magFilter = VK_FILTER_LINEAR;
-        sampler_info.minFilter = VK_FILTER_LINEAR;
-
-        vkCreateSampler(g_Device, &sampler_info, NULL, &g_LinearSampler);
-
-        sampler_info.magFilter = VK_FILTER_NEAREST;
-        sampler_info.minFilter = VK_FILTER_NEAREST;
-
-        vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
+        allocated_image_create(&create_info, image);
 
         for (int i = 0; i < g_SwapchainImageCount; i += 1) {
                 descriptor_write_texture(g_SwapchainFrameResources[i].global_descriptors,
-                                         &g_Textures[index].image, 2, 0, g_LinearSampler);
+                                         &g_Textures[index].image, 2, index, g_LinearSampler);
         }
 
-        return true;
+        return index;
+}
+
+RenderObject gpu_upload_model(Model *model) {
+        RenderObject r;
+
+        r.mesh = mesh_buffer_create(model->meshes);
+        r.material = &g_DefaultMaterial;
+        r.tex_index = gpu_upload_texture(model->materials);
+
+        return r;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
@@ -1047,4 +1048,46 @@ bool begin_command_buffer(VkCommandBuffer command) {
         VK_EXPECT(vkBeginCommandBuffer(command, &info));
 
         return true;
+}
+
+void create_samplers() {
+        VkSamplerCreateInfo sampler_info = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+
+        vkCreateSampler(g_Device, &sampler_info, NULL, &g_LinearSampler);
+
+        sampler_info.magFilter = VK_FILTER_NEAREST;
+        sampler_info.minFilter = VK_FILTER_NEAREST;
+
+        vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
+}
+
+DrawBatch draw_batch_create(RenderObject *obj, uint32_t first_instance) {
+        DrawBatch batch = {0};
+        batch.material = obj->material;
+        batch.mesh = obj->mesh;
+        batch.first_instance = first_instance;
+
+        return batch;
+}
+
+void draw_batch_add(DrawBatch *batch, RenderObject *obj, Instance *ssbo) {
+        uint32_t index = batch->first_instance + batch->count;
+        batch->count += 1;
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->mesh];
+
+        ssbo[index] = (Instance){
+            .model = obj->transform,
+            .vertex_address = mesh->vertex_address,
+            .tex_index = obj->tex_index,
+        };
+}
+
+void draw_batch_draw(DrawBatch *batch) {
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->mesh];
+        DrawCommandBindIndexBuffer(mesh);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, mesh->index.info.size / sizeof(uint32_t),
+                         batch->count, 0, 0, batch->first_instance);
 }

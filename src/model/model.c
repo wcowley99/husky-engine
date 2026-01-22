@@ -7,6 +7,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define CGLTF_IMPLEMENTATION
+#include <cgltf.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,7 +75,12 @@ void parse_face(Str s, Face **faces) {
         array_append(*faces, f);
 
         fields = make_cut(str_triml(fields.tail), ' ');
-        if (fields.head.len != 0) {
+        int count = 3;
+        while (fields.head.len != 0) {
+                count += 1;
+                if (count > 4) {
+                        printf("found a face with %d vertices\n", count);
+                }
                 f.v[1] = f.v[2];
                 f.vt[1] = f.vt[2];
                 f.vn[1] = f.vn[2];
@@ -89,9 +97,10 @@ void parse_face(Str s, Face **faces) {
                 if (elem.tail.len != 0) {
                         f.vn[2] = str_to_int(elem.tail);
                 }
-        }
+                array_append(*faces, f);
 
-        array_append(*faces, f);
+                fields = make_cut(str_triml(fields.tail), ' ');
+        }
 }
 
 MaterialInfo *load_mats(Str path, Str mtlfile) {
@@ -248,11 +257,29 @@ Model load_obj(const char *filename) {
         return m;
 }
 
+Model load_glb(const char *filename) {
+        cgltf_options opts = {0};
+        cgltf_data *data = NULL;
+        cgltf_result result = cgltf_parse_file(&opts, filename, &data);
+
+        Model m = {0};
+
+        if (result == cgltf_result_success) {
+                cgltf_free(data);
+        }
+
+        return m;
+}
+
 Model load_model(const char *filename) {
         int len = strlen(filename);
 
         if (strcmp(filename + (len - 4), ".obj") == 0) {
                 return load_obj(filename);
+        }
+
+        if (strcmp(filename + (len - 4), ".glb") == 0) {
+                return load_glb(filename);
         }
 
         printf("Could not determine filetype for file %s\n", filename);

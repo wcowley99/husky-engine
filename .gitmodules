@@ -10,3 +10,6 @@
 [submodule "external/VulkanMemoryAllocator"]
 	path = external/VulkanMemoryAllocator
 	url = git@github.com:GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "external/cgltf"]
+	path = external/cgltf
+	url = git@github.com:jkuhlmann/cgltf.git

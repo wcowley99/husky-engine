@@ -29,3 +29,15 @@ bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags
 void buffer_destroy(Buffer *buffer) {
         vmaDestroyBuffer(buffer->allocator, buffer->buffer, buffer->allocation);
 }
+
+void *buffer_mmap(Buffer *buffer, VmaAllocator allocator) {
+        void *ssbo;
+        vmaMapMemory(allocator, buffer->allocation, &ssbo);
+
+        return ssbo;
+}
+
+void buffer_munmap(Buffer *buffer, VmaAllocator allocator) {
+        vmaFlushAllocation(allocator, buffer->allocation, 0, VK_WHOLE_SIZE);
+        vmaUnmapMemory(allocator, buffer->allocation);
+}
