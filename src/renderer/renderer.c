@@ -90,6 +90,7 @@ uint32_t mesh_buffer_create(Mesh *mesh) {
         uint32_t index = array_length(g_MeshBuffers);
         array_append(g_MeshBuffers, (MeshBuffer){0});
         MeshBuffer *buffer = &g_MeshBuffers[index];
+        buffer->num_indices = array_length(mesh->indices);
 
         buffer_create(g_Allocator, vertex_buffer_size,
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -166,7 +167,7 @@ bool frame_resources_create(FrameResources *f) {
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
 
-        EXPECT(buffer_create(g_Allocator, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        EXPECT(buffer_create(g_Allocator, sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
         EXPECT(buffer_create(g_Allocator, sizeof(Instance) * MAX_INSTANCES,
                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -427,10 +428,10 @@ bool RendererInit(RendererCreateInfo *c) {
 
         // g_Model = load_model("assets/objs/city/center-city/Center_City_Sci-Fi.obj");
         // g_Model = load_model("assets/objs/red-demon-tris.obj");
-        Model red_demon = load_model("assets/objs/red-demon.obj");
+        Model red_demon = load_model("assets/bard-1.obj");
         g_RedDemons[0] = gpu_upload_model(&red_demon);
 
-        Model stone_golem = load_model("assets/objs/stone-golem.obj");
+        Model stone_golem = load_model("assets/bard-1.obj");
         g_StoneGolems[0] = gpu_upload_model(&stone_golem);
 
         for (int i = 0; i < 10; i += 1) {
@@ -572,14 +573,14 @@ void DrawCommandBindGraphicsPipeline(GraphicsPipeline *graphics) {
         g_ActiveGraphicsPipeline = graphics;
 }
 
-void DrawCommandSetCameraData(CameraData *camera) {
+void DrawCommandSetSceneData(SceneData *camera) {
         if (!g_ActiveGraphicsPipeline) {
                 printf("No currently bound graphics pipeline!");
                 return;
         }
         vmaCopyMemoryToAllocation(g_Allocator, camera,
                                   g_CurrentFrameResources->camera_uniform.allocation, 0,
-                                  sizeof(CameraData));
+                                  sizeof(SceneData));
 
         vkCmdBindDescriptorSets(g_CurrentFrameResources->command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 g_ActiveGraphicsPipeline->layout, 0, 1,
@@ -709,8 +710,14 @@ void RendererDraw() {
         mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
         mat4 viewproj = mat4_mul(proj, view);
 
-        CameraData camera = {.view = view, .proj = view, .viewproj = viewproj};
-        DrawCommandSetCameraData(&camera);
+        SceneData scene = {
+            .view = view,
+            .proj = view,
+            .viewproj = viewproj,
+            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
+            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
+        };
+        DrawCommandSetSceneData(&scene);
 
         Instance *ssbo =
             (Instance *)buffer_mmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
@@ -808,7 +815,7 @@ bool init_descriptors() {
         DescriptorBinding global_bindings[3] = {
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
              .count = 1,
-             .stage = VK_SHADER_STAGE_VERTEX_BIT},
+             .stage = VK_SHADER_STAGE_ALL_GRAPHICS},
             {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
              .count = 1,
              .stage = VK_SHADER_STAGE_VERTEX_BIT},
@@ -1088,6 +1095,6 @@ void draw_batch_add(DrawBatch *batch, RenderObject *obj, Instance *ssbo) {
 void draw_batch_draw(DrawBatch *batch) {
         const MeshBuffer *mesh = &g_MeshBuffers[batch->mesh];
         DrawCommandBindIndexBuffer(mesh);
-        vkCmdDrawIndexed(g_CurrentFrameResources->command, mesh->index.info.size / sizeof(uint32_t),
-                         batch->count, 0, 0, batch->first_instance);
+        vkCmdDrawIndexed(g_CurrentFrameResources->command, mesh->num_indices, batch->count, 0, 0,
+                         batch->first_instance);
 }

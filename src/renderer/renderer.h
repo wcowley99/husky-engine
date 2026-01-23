@@ -27,7 +27,7 @@ typedef struct {
         vec4 ambientColor;
         vec4 sunlightDirection;
         vec4 sunlightColor;
-} CameraData;
+} SceneData;
 
 typedef struct {
         mat4 model;
@@ -40,6 +40,8 @@ typedef struct {
         Buffer vertex;
         Buffer index;
         VkDeviceAddress vertex_address;
+
+        uint32_t num_indices;
 } MeshBuffer;
 
 uint32_t mesh_buffer_create(Mesh *mesh);

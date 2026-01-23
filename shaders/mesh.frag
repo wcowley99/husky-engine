@@ -15,11 +15,12 @@ layout(location = 0) out vec4 fragColor;
 layout(set = 0, binding = 2) uniform sampler2D diffuse_textures[];
 
 void main() {
-  // float light = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1f);
-  //
-  // vec3 color = inColor * texture(colorTex, inUV).xyz;
-  // vec3 ambient = color * sceneData.ambientColor.xyz;
+  float light = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1);
+  
+  vec3 color = inColor * texture(diffuse_textures[nonuniformEXT(inTexIndex)], inUV).xyz;
+  vec3 ambient = color * sceneData.ambientColor.xyz;
 
   // fragColor = vec4(color * light * sceneData.sunlightColor.w + ambient, 1.0f);
-  fragColor = texture(diffuse_textures[nonuniformEXT(inTexIndex)], inUV);
+  fragColor = vec4(ambient * light, 1.0f);
+  // fragColor = texture(diffuse_textures[nonuniformEXT(inTexIndex)], inUV);
 }
