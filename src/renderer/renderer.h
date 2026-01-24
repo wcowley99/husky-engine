@@ -9,6 +9,8 @@
 
 #include "vkb.h"
 
+#include "scene/camera.h"
+
 #include <SDL3/SDL.h>
 
 #include <assert.h>
@@ -96,8 +98,6 @@ typedef struct {
 bool RendererInit(RendererCreateInfo *c);
 void RendererShutdown();
 
-void MoveCamera(vec3 delta);
-
 typedef struct {
         uint32_t mesh;
         uint32_t tex_index;
@@ -153,5 +153,7 @@ ModelHandle agpu_load_model(const char *filename);
 
 void agpu_begin_frame();
 void agpu_end_frame();
+
+void agpu_set_camera(Camera camera);
 
 void agpu_draw_model(ModelHandle model, mat4 transform);

@@ -73,6 +73,8 @@ vec3 vec3_cross(vec3 a, vec3 b);
 
 float vec3_dot(vec3 a, vec3 b);
 
+vec3 vec3_scale(vec3 a, float scale);
+
 mat4 mat4_mul(mat4 a, mat4 b);
 vec4 mat4_mul_vec(mat4 a, vec4 b);
 

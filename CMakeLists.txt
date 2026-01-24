@@ -30,6 +30,8 @@ add_library(engine-lib
   src/common/linalgebra.c
   src/common/str.c
   src/common/util.c
+
+  src/scene/camera.c
 )
 
 target_link_libraries(engine-lib PUBLIC

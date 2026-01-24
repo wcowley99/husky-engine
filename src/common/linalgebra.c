@@ -47,6 +47,8 @@ vec3 vec3_cross(vec3 a, vec3 b) {
 
 float vec3_dot(vec3 a, vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
+vec3 vec3_scale(vec3 a, float scale) { return (vec3){a.x * scale, a.y * scale, a.z * scale}; }
+
 mat4 mat4_mul(mat4 a, mat4 b) {
         return (mat4){
             a.m00 * b.m00 + a.m10 * b.m01 + a.m20 * b.m02 + a.m30 * b.m03,
@@ -113,9 +115,10 @@ mat4 mat4_frustum(float left, float right, float top, float bottom, float near, 
 }
 
 mat4 mat4_translate(mat4 a, vec3 b) {
-        a.m30 = b.x;
-        a.m31 = b.y;
-        a.m32 = b.z;
+        mat4 c = MAT4_IDENTITY;
+        c.m30 = b.x;
+        c.m31 = b.y;
+        c.m32 = b.z;
 
-        return a;
+        return mat4_mul(a, c);
 }

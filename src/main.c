@@ -1,5 +1,7 @@
 #include "renderer/renderer.h"
 
+#include "scene/camera.h"
+
 #include <SDL3/SDL.h>
 
 #include <stdio.h>
@@ -9,32 +11,36 @@ bool should_quit(SDL_Event *e) {
                (e->type == SDL_EVENT_KEY_DOWN && e->key.key == SDLK_ESCAPE);
 }
 
-bool handle_move() {
+bool handle_move(Camera *camera) {
         const bool *keys = SDL_GetKeyboardState(NULL);
 
+        const float camera_speed = 0.02f;
+
         if (keys[SDL_SCANCODE_W]) {
-                vec3 delta = {.x = 0.0f, .y = 0.0f, .z = 0.02f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(camera->target, camera_speed);
+                camera_move(camera, delta);
         }
         if (keys[SDL_SCANCODE_A]) {
-                vec3 delta = {.x = -0.02f, .y = 0.0f, .z = 0.0f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(vec3_normalize(vec3_cross(camera->target, camera->up)),
+                                        -camera_speed);
+                camera_move(camera, delta);
         }
         if (keys[SDL_SCANCODE_S]) {
-                vec3 delta = {.x = 0.0f, .y = 0.0f, .z = -0.02f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(camera->target, -camera_speed);
+                camera_move(camera, delta);
         }
         if (keys[SDL_SCANCODE_D]) {
-                vec3 delta = {.x = 0.02f, .y = 0.0f, .z = 0.00f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(vec3_normalize(vec3_cross(camera->target, camera->up)),
+                                        camera_speed);
+                camera_move(camera, delta);
         }
         if (keys[SDL_SCANCODE_SPACE]) {
-                vec3 delta = {.x = 0.0f, .y = 0.02f, .z = 0.0f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(camera->up, camera_speed);
+                camera_move(camera, delta);
         }
         if (keys[SDL_SCANCODE_LSHIFT]) {
-                vec3 delta = {.x = 0.0f, .y = -0.02f, .z = 0.0f};
-                MoveCamera(delta);
+                vec3 delta = vec3_scale(camera->up, -camera_speed);
+                camera_move(camera, delta);
         }
 
         return false;
@@ -60,6 +66,13 @@ int main(int argc, char **argv) {
                 return -1;
         }
 
+        Camera camera = {
+            .position = (vec3){0.0f, 0.0f, 2.0f},
+            .target = (vec3){0.0f, 0.0f, -1.0f},
+            .up = (vec3){0.0f, 1.0f, 0.0f},
+            .fov = 45.0f,
+        };
+
         ModelHandle red_guy = agpu_load_model("assets/objs/red-demon.obj");
         ModelHandle stone_guy = agpu_load_model("assets/objs/stone-golem.obj");
 
@@ -75,10 +88,11 @@ int main(int argc, char **argv) {
         while (!exit) {
                 handle_events(&exit);
 
-                handle_move();
+                handle_move(&camera);
 
                 // draw
                 agpu_begin_frame();
+                agpu_set_camera(camera);
 
                 for (int i = 0; i < 10; i += 1) {
                         agpu_draw_model(red_guy, mat4_translate(MAT4_IDENTITY, red_posns[i]));

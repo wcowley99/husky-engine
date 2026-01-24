@@ -70,10 +70,6 @@ AllocatedImage *g_Textures;
 
 RenderObject *g_RenderObjects;
 
-vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
-vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
-const vec3 g_UpVector = {0.0f, 1.0f, 0.0f};
-
 uint32_t g_Width;
 uint32_t g_Height;
 
@@ -637,12 +633,6 @@ void DrawCommandEndFrame() {
         SDL_UpdateWindowSurface(g_Window);
 }
 
-void MoveCamera(vec3 delta) {
-        // TODO: relative movement should be delta rotated by g_CameraViewDirection
-        vec3 relative = {delta.x, delta.y, -delta.z};
-        g_CameraPosition = vec3_add(g_CameraPosition, relative);
-}
-
 uint32_t gpu_upload_texture(MaterialInfo *mats) {
         AllocatedImageCreateInfo create_info = {
             .extent = (VkExtent3D){mats->diffuse_width, mats->diffuse_height, 1},
@@ -1037,23 +1027,6 @@ void agpu_begin_frame() {
                          VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
         DrawCommandBeginRendering(&g_IntermediateImage.image);
-
-        // mesh pipeline
-        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
-
-        mat4 view = mat4_look_at(g_CameraPosition,
-                                 vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
-        mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
-        mat4 viewproj = mat4_mul(proj, view);
-
-        SceneData scene = {
-            .view = view,
-            .proj = view,
-            .viewproj = viewproj,
-            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
-            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
-        };
-        DrawCommandSetSceneData(&scene);
 }
 
 void agpu_end_frame() {
@@ -1082,6 +1055,25 @@ void agpu_end_frame() {
 
         DrawCommandCopyToSwapchain(&g_IntermediateImage.image);
         DrawCommandEndFrame();
+}
+
+void agpu_set_camera(Camera camera) {
+        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
+
+        mat4 view =
+            mat4_look_at(camera.position, vec3_add(camera.position, camera.target), camera.up);
+        mat4 proj =
+            mat4_perspective(to_radians(camera.fov), (float)g_Width / g_Height, 0.1f, 100.0f);
+        mat4 viewproj = mat4_mul(proj, view);
+
+        SceneData scene = {
+            .view = view,
+            .proj = view,
+            .viewproj = viewproj,
+            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
+            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
+        };
+        DrawCommandSetSceneData(&scene);
 }
 
 void agpu_draw_model(ModelHandle model, mat4 transform) {
