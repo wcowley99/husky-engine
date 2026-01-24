@@ -96,8 +96,6 @@ typedef struct {
 bool RendererInit(RendererCreateInfo *c);
 void RendererShutdown();
 
-void RendererDraw();
-
 void MoveCamera(vec3 delta);
 
 typedef struct {
@@ -105,24 +103,29 @@ typedef struct {
         uint32_t tex_index;
 
         Material *material;
+} ModelHandle;
+
+typedef struct {
+        ModelHandle model;
 
         mat4 transform;
 } RenderObject;
+
+bool render_object_compatible(RenderObject a, RenderObject b);
 
 RenderObject gpu_upload_model(Model *model);
 
 uint32_t gpu_upload_texture(MaterialInfo *mats);
 
 typedef struct {
-        uint32_t mesh;
-        Material *material;
+        RenderObject object;
 
         uint32_t first_instance;
         uint32_t count;
 } DrawBatch;
 
-DrawBatch draw_batch_create(RenderObject *obj, uint32_t first_instance);
-void draw_batch_add(DrawBatch *batch, RenderObject *obj, Instance *ssbo);
+DrawBatch draw_batch_create(RenderObject obj, uint32_t first_instance);
+void draw_batch_add(DrawBatch *batch, RenderObject obj, Instance *ssbo);
 
 void draw_batch_draw(DrawBatch *batch);
 
@@ -144,3 +147,11 @@ bool create_device();
 bool begin_command_buffer(VkCommandBuffer command);
 
 void create_samplers();
+
+// abstract gpu functions
+ModelHandle agpu_load_model(const char *filename);
+
+void agpu_begin_frame();
+void agpu_end_frame();
+
+void agpu_draw_model(ModelHandle model, mat4 transform);

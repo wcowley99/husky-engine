@@ -60,13 +60,32 @@ int main(int argc, char **argv) {
                 return -1;
         }
 
+        ModelHandle red_guy = agpu_load_model("assets/objs/red-demon.obj");
+        ModelHandle stone_guy = agpu_load_model("assets/objs/stone-golem.obj");
+
+        vec3 red_posns[10];
+        vec3 stone_posns[10];
+
+        for (int i = 0; i < 10; i += 1) {
+                red_posns[i] = (vec3){1, 0, -i};
+                stone_posns[i] = (vec3){-1, 0, -i};
+        }
+
         bool exit = false;
         while (!exit) {
                 handle_events(&exit);
 
                 handle_move();
 
-                RendererDraw();
+                // draw
+                agpu_begin_frame();
+
+                for (int i = 0; i < 10; i += 1) {
+                        agpu_draw_model(red_guy, mat4_translate(MAT4_IDENTITY, red_posns[i]));
+                        agpu_draw_model(stone_guy, mat4_translate(MAT4_IDENTITY, stone_posns[i]));
+                }
+
+                agpu_end_frame();
         }
 
         RendererShutdown();

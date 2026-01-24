@@ -68,8 +68,7 @@ GraphicsPipeline *g_ActiveGraphicsPipeline;
 MeshBuffer *g_MeshBuffers;
 AllocatedImage *g_Textures;
 
-RenderObject g_RedDemons[10];
-RenderObject g_StoneGolems[10];
+RenderObject *g_RenderObjects;
 
 vec3 g_CameraPosition = {0.0f, 0.0f, 2.0f};
 vec3 g_CameraViewDirection = {0.0f, 0.0f, -1.0f};
@@ -426,24 +425,7 @@ bool RendererInit(RendererCreateInfo *c) {
         g_MeshBuffers = array(MeshBuffer);
         g_Textures = array(AllocatedImage);
 
-        // g_Model = load_model("assets/objs/city/center-city/Center_City_Sci-Fi.obj");
-        // g_Model = load_model("assets/objs/red-demon-tris.obj");
-        Model red_demon = load_model("assets/bard-1.obj");
-        g_RedDemons[0] = gpu_upload_model(&red_demon);
-
-        Model stone_golem = load_model("assets/bard-1.obj");
-        g_StoneGolems[0] = gpu_upload_model(&stone_golem);
-
-        for (int i = 0; i < 10; i += 1) {
-                g_RedDemons[i] = g_RedDemons[0];
-                g_StoneGolems[i] = g_StoneGolems[0];
-
-                g_RedDemons[i].transform = mat4_translate(MAT4_IDENTITY, (vec3){1, 0, -i});
-                g_StoneGolems[i].transform = mat4_translate(MAT4_IDENTITY, (vec3){-1, 0, -i});
-        }
-
-        model_destroy(red_demon);
-        model_destroy(stone_golem);
+        g_RenderObjects = array(RenderObject);
 
         return true;
 }
@@ -619,12 +601,7 @@ void DrawCommandCopyToSwapchain(Image *image) {
 
 bool DrawCommandBeginFrame() {
         if (!swapchain_next_frame()) {
-                vkDeviceWaitIdle(g_Device);
-
-                swapchain_destroy();
-                swapchain_create();
-
-                return false;
+                SwapchainRecreate();
         }
 
         vkResetFences(g_Device, 1, &g_CurrentFrameResources->render_fence);
@@ -658,91 +635,6 @@ void DrawCommandEndFrame() {
 
         // Refresh the window
         SDL_UpdateWindowSurface(g_Window);
-}
-
-void RendererDraw() {
-        int w, h;
-        SDL_GetWindowSize(g_Window, &w, &h);
-
-        if (w != g_Width || h != g_Height) {
-                printf("Resizing Swapchain: w = %d, h = %d\n", w, h);
-                g_Width = w;
-                g_Height = h;
-                SwapchainRecreate();
-        }
-
-        if (!DrawCommandBeginFrame()) {
-                return;
-        }
-        DrawCommandClear(&g_IntermediateImage.image, (VkClearColorValue){0.0f, 0.0f, 1.0f, 0.0f});
-
-        // compute pipeline
-        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
-                         VK_IMAGE_LAYOUT_GENERAL);
-        DrawCommandBindCompute(&g_GradientPipeline);
-        DrawCommandBindComputeDescriptor(&g_GradientPipeline,
-                                         g_IntermediateImageDescriptors.descriptor, 0);
-
-        struct {
-                vec4 top;
-                vec4 bottom;
-                float padding[8];
-        } pc = {
-            .top = {1.0f, 0.0f, 0.0f, 1.0f},
-            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
-        };
-        DrawCommandSetComputePushConstants(&g_GradientPipeline, 0, sizeof(pc), &pc);
-        DrawCommandExecuteCompute(&g_IntermediateImage.image);
-
-        // graphics pipeline
-        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
-                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        image_transition(&g_DepthImage.image, g_CurrentFrameResources->command,
-                         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-        DrawCommandBeginRendering(&g_IntermediateImage.image);
-
-        // mesh pipeline
-        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
-
-        mat4 view = mat4_look_at(g_CameraPosition,
-                                 vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
-        mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
-        mat4 viewproj = mat4_mul(proj, view);
-
-        SceneData scene = {
-            .view = view,
-            .proj = view,
-            .viewproj = viewproj,
-            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
-            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
-        };
-        DrawCommandSetSceneData(&scene);
-
-        Instance *ssbo =
-            (Instance *)buffer_mmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
-
-        DrawBatch golem_batch = draw_batch_create(g_StoneGolems, 0);
-
-        for (int i = 0; i < 10; i += 1) {
-                draw_batch_add(&golem_batch, &g_StoneGolems[i], ssbo);
-        }
-
-        DrawBatch demon_batch = draw_batch_create(g_RedDemons, golem_batch.count);
-
-        for (int i = 0; i < 10; i += 1) {
-                draw_batch_add(&demon_batch, &g_RedDemons[i], ssbo);
-        }
-
-        buffer_munmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
-
-        draw_batch_draw(&golem_batch);
-        draw_batch_draw(&demon_batch);
-
-        vkCmdEndRendering(g_CurrentFrameResources->command);
-
-        DrawCommandCopyToSwapchain(&g_IntermediateImage.image);
-        DrawCommandEndFrame();
 }
 
 void MoveCamera(vec3 delta) {
@@ -780,12 +672,15 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
         return index;
 }
 
-RenderObject gpu_upload_model(Model *model) {
-        RenderObject r;
+ModelHandle agpu_load_model(const char *filename) {
+        Model m = load_model(filename);
+        ModelHandle r;
 
-        r.mesh = mesh_buffer_create(model->meshes);
+        r.mesh = mesh_buffer_create(m.meshes);
         r.material = &g_DefaultMaterial;
-        r.tex_index = gpu_upload_texture(model->materials);
+        r.tex_index = gpu_upload_texture(m.materials);
+
+        model_destroy(m);
 
         return r;
 }
@@ -1071,30 +966,133 @@ void create_samplers() {
         vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
 }
 
-DrawBatch draw_batch_create(RenderObject *obj, uint32_t first_instance) {
+DrawBatch draw_batch_create(RenderObject obj, uint32_t first_instance) {
         DrawBatch batch = {0};
-        batch.material = obj->material;
-        batch.mesh = obj->mesh;
+        batch.object = obj;
         batch.first_instance = first_instance;
+        batch.count = 0;
 
         return batch;
 }
 
-void draw_batch_add(DrawBatch *batch, RenderObject *obj, Instance *ssbo) {
+void draw_batch_add(DrawBatch *batch, RenderObject obj, Instance *ssbo) {
         uint32_t index = batch->first_instance + batch->count;
         batch->count += 1;
-        const MeshBuffer *mesh = &g_MeshBuffers[batch->mesh];
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.model.mesh];
 
         ssbo[index] = (Instance){
-            .model = obj->transform,
+            .model = obj.transform,
             .vertex_address = mesh->vertex_address,
-            .tex_index = obj->tex_index,
+            .tex_index = obj.model.tex_index,
         };
 }
 
 void draw_batch_draw(DrawBatch *batch) {
-        const MeshBuffer *mesh = &g_MeshBuffers[batch->mesh];
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.model.mesh];
         DrawCommandBindIndexBuffer(mesh);
         vkCmdDrawIndexed(g_CurrentFrameResources->command, mesh->num_indices, batch->count, 0, 0,
                          batch->first_instance);
+}
+
+void agpu_begin_frame() {
+        int w, h;
+        SDL_GetWindowSize(g_Window, &w, &h);
+
+        if (w != g_Width || h != g_Height) {
+                printf("Resizing Swapchain: w = %d, h = %d\n", w, h);
+                g_Width = w;
+                g_Height = h;
+                SwapchainRecreate();
+        }
+
+        if (!DrawCommandBeginFrame()) {
+                return;
+        }
+        DrawCommandClear(&g_IntermediateImage.image, (VkClearColorValue){0.0f, 0.0f, 1.0f, 0.0f});
+
+        array_clear(g_RenderObjects);
+
+        // compute pipeline
+        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_GENERAL);
+        DrawCommandBindCompute(&g_GradientPipeline);
+        DrawCommandBindComputeDescriptor(&g_GradientPipeline,
+                                         g_IntermediateImageDescriptors.descriptor, 0);
+
+        struct {
+                vec4 top;
+                vec4 bottom;
+                float padding[8];
+        } pc = {
+            .top = {1.0f, 0.0f, 0.0f, 1.0f},
+            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
+        };
+        DrawCommandSetComputePushConstants(&g_GradientPipeline, 0, sizeof(pc), &pc);
+        DrawCommandExecuteCompute(&g_IntermediateImage.image);
+
+        // graphics pipeline
+        image_transition(&g_IntermediateImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        image_transition(&g_DepthImage.image, g_CurrentFrameResources->command,
+                         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+        DrawCommandBeginRendering(&g_IntermediateImage.image);
+
+        // mesh pipeline
+        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
+
+        mat4 view = mat4_look_at(g_CameraPosition,
+                                 vec3_add(g_CameraPosition, g_CameraViewDirection), g_UpVector);
+        mat4 proj = mat4_perspective(to_radians(45.0f), (float)g_Width / g_Height, 0.1f, 100.0f);
+        mat4 viewproj = mat4_mul(proj, view);
+
+        SceneData scene = {
+            .view = view,
+            .proj = view,
+            .viewproj = viewproj,
+            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
+            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
+        };
+        DrawCommandSetSceneData(&scene);
+}
+
+void agpu_end_frame() {
+        Instance *ssbo =
+            (Instance *)buffer_mmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
+
+        DrawBatch batch = draw_batch_create(g_RenderObjects[0], 0);
+        draw_batch_add(&batch, g_RenderObjects[0], ssbo);
+
+        for (int i = 1; i < array_length(g_RenderObjects); i += 1) {
+                if (!render_object_compatible(batch.object, g_RenderObjects[i])) {
+                        draw_batch_draw(&batch);
+
+                        batch = draw_batch_create(g_RenderObjects[i], i);
+                        draw_batch_add(&batch, g_RenderObjects[i], ssbo);
+                } else {
+                        draw_batch_add(&batch, g_RenderObjects[i], ssbo);
+                }
+        }
+
+        draw_batch_draw(&batch);
+
+        buffer_munmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
+
+        vkCmdEndRendering(g_CurrentFrameResources->command);
+
+        DrawCommandCopyToSwapchain(&g_IntermediateImage.image);
+        DrawCommandEndFrame();
+}
+
+void agpu_draw_model(ModelHandle model, mat4 transform) {
+        RenderObject obj = {
+            .model = model,
+            .transform = transform,
+        };
+
+        array_append(g_RenderObjects, obj);
+}
+
+bool render_object_compatible(RenderObject a, RenderObject b) {
+        return (a.model.mesh == b.model.mesh) && (a.model.material == b.model.material);
 }
