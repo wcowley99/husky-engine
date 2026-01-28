@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/linalgebra.h"
+#include <cglm/cglm.h>
 
 #include <stdbool.h>
 #include <stddef.h>

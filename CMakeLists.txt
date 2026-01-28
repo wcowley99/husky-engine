@@ -27,11 +27,11 @@ add_library(engine-lib
   src/renderer/vkb.c
 
   src/common/array.c
-  src/common/linalgebra.c
   src/common/str.c
   src/common/util.c
 
   src/scene/camera.c
+  src/scene/scene.c
 )
 
 target_link_libraries(engine-lib PUBLIC
@@ -48,6 +48,7 @@ target_include_directories(engine-lib PUBLIC
   external/volk
   external/stb
   external/cgltf
+  external/cglm/include
   ${CMAKE_BINARY_DIR}
 
   src
@@ -56,8 +57,3 @@ target_include_directories(engine-lib PUBLIC
 # Build main
 add_executable(civ-game src/main.c)
 target_link_libraries(civ-game engine-lib)
-
-# Build Test
-add_executable(test test/test.c)
-target_link_libraries(test engine-lib)
-target_include_directories(test PRIVATE ${CMAKE_SOURCE_DIR})

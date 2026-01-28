@@ -1,49 +1,17 @@
 #include "renderer/renderer.h"
 
 #include "scene/camera.h"
+#include "scene/scene.h"
 
 #include <SDL3/SDL.h>
 
 #include <stdio.h>
 
+Scene g_Scene;
+
 bool should_quit(SDL_Event *e) {
         return e->type == SDL_EVENT_QUIT ||
                (e->type == SDL_EVENT_KEY_DOWN && e->key.key == SDLK_ESCAPE);
-}
-
-bool handle_move(Camera *camera) {
-        const bool *keys = SDL_GetKeyboardState(NULL);
-
-        const float camera_speed = 0.02f;
-
-        if (keys[SDL_SCANCODE_W]) {
-                vec3 delta = vec3_scale(camera->target, camera_speed);
-                camera_move(camera, delta);
-        }
-        if (keys[SDL_SCANCODE_A]) {
-                vec3 delta = vec3_scale(vec3_normalize(vec3_cross(camera->target, camera->up)),
-                                        -camera_speed);
-                camera_move(camera, delta);
-        }
-        if (keys[SDL_SCANCODE_S]) {
-                vec3 delta = vec3_scale(camera->target, -camera_speed);
-                camera_move(camera, delta);
-        }
-        if (keys[SDL_SCANCODE_D]) {
-                vec3 delta = vec3_scale(vec3_normalize(vec3_cross(camera->target, camera->up)),
-                                        camera_speed);
-                camera_move(camera, delta);
-        }
-        if (keys[SDL_SCANCODE_SPACE]) {
-                vec3 delta = vec3_scale(camera->up, camera_speed);
-                camera_move(camera, delta);
-        }
-        if (keys[SDL_SCANCODE_LSHIFT]) {
-                vec3 delta = vec3_scale(camera->up, -camera_speed);
-                camera_move(camera, delta);
-        }
-
-        return false;
 }
 
 void handle_events(bool *exit) {
@@ -51,6 +19,8 @@ void handle_events(bool *exit) {
         while (SDL_PollEvent(&e)) {
                 if (should_quit(&e)) {
                         *exit = true;
+                } else {
+                        scene_handle_event(&g_Scene, e);
                 }
         }
 }
@@ -66,42 +36,46 @@ int main(int argc, char **argv) {
                 return -1;
         }
 
-        Camera camera = {
-            .position = (vec3){0.0f, 0.0f, 2.0f},
-            .target = (vec3){0.0f, 0.0f, -1.0f},
-            .up = (vec3){0.0f, 1.0f, 0.0f},
-            .fov = 45.0f,
-        };
-
         ModelHandle red_guy = agpu_load_model("assets/objs/red-demon.obj");
         ModelHandle stone_guy = agpu_load_model("assets/objs/stone-golem.obj");
 
-        vec3 red_posns[10];
-        vec3 stone_posns[10];
+        g_Scene = scene_create();
+        scene_set_camera(&g_Scene, camera_default());
 
+        Transform transform = {0};
         for (int i = 0; i < 10; i += 1) {
-                red_posns[i] = (vec3){1, 0, -i};
-                stone_posns[i] = (vec3){-1, 0, -i};
+                transform.position[0] = 1.0f;
+                transform.position[1] = 0.0f;
+                transform.position[2] = -i;
+
+                transform.scale[0] = i / 3.0f;
+                transform.scale[1] = i / 3.0f;
+                transform.scale[2] = i / 3.0f;
+                scene_add_entity(&g_Scene, transform, red_guy);
+
+                transform.position[0] = -1.0f;
+
+                transform.scale[0] = (10 - i) / 3.0f;
+                transform.scale[1] = (10 - i) / 3.0f;
+                transform.scale[2] = (10 - i) / 3.0f;
+                scene_add_entity(&g_Scene, transform, stone_guy);
         }
 
         bool exit = false;
         while (!exit) {
                 handle_events(&exit);
 
-                handle_move(&camera);
+                scene_handle_inputs(&g_Scene);
 
                 // draw
                 agpu_begin_frame();
-                agpu_set_camera(camera);
 
-                for (int i = 0; i < 10; i += 1) {
-                        agpu_draw_model(red_guy, mat4_translate(MAT4_IDENTITY, red_posns[i]));
-                        agpu_draw_model(stone_guy, mat4_translate(MAT4_IDENTITY, stone_posns[i]));
-                }
+                scene_draw(&g_Scene);
 
                 agpu_end_frame();
         }
 
         RendererShutdown();
+        scene_destroy(&g_Scene);
         return 0;
 }

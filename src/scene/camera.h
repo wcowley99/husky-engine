@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/linalgebra.h"
+#include "cglm/cglm.h"
 
 typedef struct {
         vec3 position;
@@ -10,4 +10,7 @@ typedef struct {
         float fov;
 } Camera;
 
+Camera camera_default();
+
 void camera_move(Camera *camera, vec3 delta);
+void camera_roate(Camera *camera, vec3 rot);

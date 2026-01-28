@@ -30,16 +30,13 @@ void material_info_destroy(MaterialInfo *mat) {
         free(mat->diffuse_tex);
 }
 
-vec3 parse_vec3(Str s) {
-        vec3 r = {0};
+void parse_vec3(Str s, vec3 v) {
         Cut c = make_cut(str_triml(s), ' ');
-        r.x = str_to_float(c.head);
+        v[0] = str_to_float(c.head);
         c = make_cut(str_triml(c.tail), ' ');
-        r.y = str_to_float(c.head);
+        v[1] = str_to_float(c.head);
         c = make_cut(str_triml(c.tail), ' ');
-        r.z = str_to_float(c.head);
-
-        return r;
+        v[2] = str_to_float(c.head);
 }
 
 TextureCoord parse_tex(Str s) {
@@ -138,9 +135,9 @@ MaterialInfo *load_mats(Str path, Str mtlfile) {
                 } else if (!fields.head.len || !current) {
                         continue;
                 } else if (str_equal(fields.head, make_str("Ka"))) {
-                        current->ambient = parse_vec3(fields.tail);
+                        parse_vec3(fields.tail, current->ambient);
                 } else if (str_equal(fields.head, make_str("Ks"))) {
-                        current->specular = parse_vec3(fields.tail);
+                        parse_vec3(fields.tail, current->specular);
                 } else if (str_equal(fields.head, make_str("map_Kd"))) {
                         char *texpath = malloc(path.len + fields.tail.len + 2);
                         memcpy(texpath, path.data, path.len);
@@ -209,9 +206,11 @@ Model load_obj(const char *filename) {
                 } else if (str_equal(fields.head, make_str("mtllib"))) {
                         m.materials = load_mats(path.head, fields.tail);
                 } else if (str_equal(fields.head, make_str("v"))) {
-                        array_append(positions, parse_vec3(fields.tail));
+                        vec3 *v = array_reserve(positions);
+                        parse_vec3(fields.tail, *v);
                 } else if (str_equal(fields.head, make_str("vn"))) {
-                        array_append(normals, parse_vec3(fields.tail));
+                        vec3 *v = array_reserve(normals);
+                        parse_vec3(fields.tail, *v);
                 } else if (str_equal(fields.head, make_str("vt"))) {
                         array_append(texs, parse_tex(fields.tail));
                 } else if (str_equal(fields.head, make_str("f"))) {
@@ -237,11 +236,14 @@ Model load_obj(const char *filename) {
 
                         // OBJ models are 1-indexed, so to convert to the proper array
                         // index, we need to subtract 1
-                        vert.position = positions[v - 1];
+                        glm_vec3_dup(positions[v - 1], vert.position);
                         if (vn != 0) {
-                                vert.normal = normals[vn - 1];
+                                glm_vec3_dup(normals[vn - 1], vert.normal);
                         }
-                        vert.color = (vec4){1.0f, 1.0f, 1.0f, 1.0f};
+                        vert.color[0] = 1.0f;
+                        vert.color[1] = 1.0f;
+                        vert.color[2] = 1.0f;
+                        vert.color[3] = 1.0f;
                         if (vt != 0) {
                                 vert.uv_x = texs[vt - 1].u;
                                 vert.uv_y = texs[vt - 1].v;

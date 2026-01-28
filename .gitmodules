@@ -13,3 +13,6 @@
 [submodule "external/cgltf"]
 	path = external/cgltf
 	url = git@github.com:jkuhlmann/cgltf.git
+[submodule "external/cglm"]
+	path = external/cglm
+	url = git@github.com:recp/cglm.git

@@ -5,6 +5,7 @@ project(
 )
 
 add_subdirectory(volk)
+add_subdirectory(cglm)
 
 add_library(external 
   VulkanMemoryAllocator/src/VmaUsage.cpp

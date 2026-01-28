@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/linalgebra.h"
 #include "model/model.h"
 
 #include "buffer.h"

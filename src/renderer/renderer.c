@@ -11,6 +11,7 @@
 #include "common/util.h"
 
 #include <SDL3/SDL_vulkan.h>
+#include <cglm/cam.h>
 
 #include <malloc.h>
 #include <math.h>
@@ -974,10 +975,10 @@ void draw_batch_add(DrawBatch *batch, RenderObject obj, Instance *ssbo) {
         const MeshBuffer *mesh = &g_MeshBuffers[batch->object.model.mesh];
 
         ssbo[index] = (Instance){
-            .model = obj.transform,
             .vertex_address = mesh->vertex_address,
             .tex_index = obj.model.tex_index,
         };
+        glm_mat4_dup(obj.transform, ssbo[index].model);
 }
 
 void draw_batch_draw(DrawBatch *batch) {
@@ -1063,27 +1064,40 @@ void agpu_end_frame() {
 void agpu_set_camera(Camera camera) {
         DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
 
-        mat4 view =
-            mat4_look_at(camera.position, vec3_add(camera.position, camera.target), camera.up);
-        mat4 proj =
-            mat4_perspective(to_radians(camera.fov), (float)g_Width / g_Height, 0.1f, 100.0f);
-        mat4 viewproj = mat4_mul(proj, view);
+        SceneData scene = {0};
 
-        SceneData scene = {
-            .view = view,
-            .proj = view,
-            .viewproj = viewproj,
-            .ambientColor = (vec4){1.0f, 1.0f, 1.0f, 0.0f},
-            .sunlightDirection = (vec4){0.3f, 1.0f, 0.3f, 0.1f},
-        };
+        // Vulkan internally uses an inverted Y-axis compared to cglm. That is, y=0 is the top of
+        // the screen, while y=MAX is the bottom. To adjust for this we need to invert the view
+        // matrix along the y axis. Now, we also need to flip the position of the camera eye on the
+        // y-axis or vertical movement will be inverted
+
+        vec3 eye = {camera.position[0], -1 * camera.position[1], camera.position[2]};
+        vec3 flip = {1.0f, -1.0f, 1.0f};
+
+        glm_look(eye, camera.target, camera.up, scene.view);
+        glm_scale(scene.view, flip);
+
+        glm_perspective(glm_rad(camera.fov), (float)g_Width / g_Height, 0.1f, 100.0f, scene.proj);
+
+        glm_mat4_mul(scene.proj, scene.view, scene.viewproj);
+
+        scene.ambientColor[0] = 1.0f;
+        scene.ambientColor[1] = 1.0f;
+        scene.ambientColor[2] = 1.0f;
+        scene.ambientColor[3] = 0.0f;
+
+        scene.sunlightDirection[0] = 0.3f;
+        scene.sunlightDirection[1] = 1.0f;
+        scene.sunlightDirection[2] = 0.3f;
+        scene.sunlightDirection[3] = 0.1f;
         DrawCommandSetSceneData(&scene);
 }
 
 void agpu_draw_model(ModelHandle model, mat4 transform) {
         RenderObject obj = {
             .model = model,
-            .transform = transform,
         };
+        glm_mat4_dup(transform, obj.transform);
 
         array_append(g_RenderObjects, obj);
 }

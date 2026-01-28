@@ -15,6 +15,10 @@ typedef struct {
         ((a) = array_ensure_capacity(a, 1, sizeof(v)), (a)[array_header(a)->length] = (v),         \
          array_header(a)->length++)
 
+#define array_reserve(a)                                                                           \
+        ((a) = array_ensure_capacity(a, 1, sizeof(*a)), array_header(a)->length++,                 \
+         &(a)[array_header(a)->length - 1])
+
 #define array_clear(a) (array_header(a)->length = 0)
 
 #define array_header(a) ((ArrayHeader *)(a) - 1)
