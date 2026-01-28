@@ -37,7 +37,7 @@ typedef struct {
         size_t diffuse_height;
 } MaterialInfo;
 
-void material_destroy(MaterialInfo *mat);
+void material_info_destroy(MaterialInfo *mat);
 
 typedef struct {
         Mesh *meshes;

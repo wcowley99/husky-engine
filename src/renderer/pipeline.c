@@ -184,6 +184,9 @@ GraphicsPipeline create_pbr_pipeline(VkDevice device, VkDescriptorSetLayout glob
         };
         graphics_pipeline_create(device, &mesh_pipeline_info, &r);
 
+        free(vert);
+        free(frag);
+
         return r;
 }
 

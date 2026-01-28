@@ -30,5 +30,8 @@ $(SHADER_OUT_DIR)/%.spv: $(SHADER_SRC_DIR)/%
 run: all
 	cd $(PROJECT_BUILD_PATH) && ./$(PROJECT_NAME)$(EXT)
 
+valgrind: all
+	cd $(PROJECT_BUILD_PATH) && valgrind --leak-check=full --suppressions=../valgrind.supp ./$(PROJECT_NAME)$(EXT)
+
 clean:
 	rm -rf $(PROJECT_BUILD_PATH)

@@ -281,6 +281,8 @@ bool swapchain_create() {
                 EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
+        free(images);
+
         return true;
 }
 
@@ -448,6 +450,7 @@ void RendererShutdown() {
                 allocated_image_destroy(&g_Textures[i], g_Device);
         }
         array_free(g_Textures);
+        array_free(g_RenderObjects);
 
         swapchain_destroy();
         immediate_command_destroy(&g_ImmediateCommand);

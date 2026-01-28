@@ -1,0 +1,23 @@
+{
+   vulkan_cond
+   Memcheck:Cond
+   ...
+   obj:/usr/lib/libvulkan_radeon.so
+   ...
+}
+{
+   vulkan_leak_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   obj:/usr/lib/libvulkan_radeon.so
+   ...
+}
+{
+   sdl_leak_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:SDL_DBus_Init
+   ...
+}

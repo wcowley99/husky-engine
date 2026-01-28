@@ -25,7 +25,10 @@ void MeshFree(Mesh *mesh) {
         array_free(mesh->indices);
 }
 
-void material_info_destroy(MaterialInfo *mat) { free(mat->diffuse_tex); }
+void material_info_destroy(MaterialInfo *mat) {
+        free(mat->name);
+        free(mat->diffuse_tex);
+}
 
 vec3 parse_vec3(Str s) {
         vec3 r = {0};
@@ -159,6 +162,8 @@ MaterialInfo *load_mats(Str path, Str mtlfile) {
                                fields.head.data);
                 }
         }
+
+        free(data);
 
         return mats;
 }
