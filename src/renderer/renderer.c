@@ -666,13 +666,13 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
         return index;
 }
 
-ModelHandle agpu_load_model(const char *filename) {
+ModelHandle agpu_load_model(char *filename) {
         Model m = load_model(filename);
         ModelHandle r;
 
         r.mesh = mesh_buffer_create(m.meshes);
         r.material = &g_DefaultMaterial;
-        r.tex_index = gpu_upload_texture(m.materials);
+        r.tex_index = gpu_upload_texture(&m.materials[1]);
 
         model_destroy(m);
 
@@ -972,17 +972,17 @@ DrawBatch draw_batch_create(RenderObject obj, uint32_t first_instance) {
 void draw_batch_add(DrawBatch *batch, RenderObject obj, Instance *ssbo) {
         uint32_t index = batch->first_instance + batch->count;
         batch->count += 1;
-        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.model.mesh];
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.mesh];
 
         ssbo[index] = (Instance){
             .vertex_address = mesh->vertex_address,
-            .tex_index = obj.model.tex_index,
+            .tex_index = obj.tex_index,
         };
         glm_mat4_dup(obj.transform, ssbo[index].model);
 }
 
 void draw_batch_draw(DrawBatch *batch) {
-        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.model.mesh];
+        const MeshBuffer *mesh = &g_MeshBuffers[batch->object.mesh];
         DrawCommandBindIndexBuffer(mesh);
         vkCmdDrawIndexed(g_CurrentFrameResources->command, mesh->num_indices, batch->count, 0, 0,
                          batch->first_instance);
@@ -1095,7 +1095,9 @@ void agpu_set_camera(Camera camera) {
 
 void agpu_draw_model(ModelHandle model, mat4 transform) {
         RenderObject obj = {
-            .model = model,
+            .material = model.material,
+            .mesh = model.mesh,
+            .tex_index = model.tex_index,
         };
         glm_mat4_dup(transform, obj.transform);
 
@@ -1103,5 +1105,5 @@ void agpu_draw_model(ModelHandle model, mat4 transform) {
 }
 
 bool render_object_compatible(RenderObject a, RenderObject b) {
-        return (a.model.mesh == b.model.mesh) && (a.model.material == b.model.material);
+        return (a.mesh == b.mesh) && (a.material == b.material);
 }

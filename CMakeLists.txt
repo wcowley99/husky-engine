@@ -49,7 +49,9 @@ target_include_directories(engine-lib PUBLIC
   external/stb
   external/cgltf
   external/cglm/include
+  external/assimp/include
   ${CMAKE_BINARY_DIR}
+  ${CMAKE_BINARY_DIR}/external/assimp/include
 
   src
 )

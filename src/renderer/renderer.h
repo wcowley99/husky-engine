@@ -105,8 +105,10 @@ typedef struct {
 } ModelHandle;
 
 typedef struct {
-        ModelHandle model;
+        uint32_t mesh;
+        uint32_t tex_index;
 
+        Material *material;
         mat4 transform;
 } RenderObject;
 
@@ -148,7 +150,7 @@ bool begin_command_buffer(VkCommandBuffer command);
 void create_samplers();
 
 // abstract gpu functions
-ModelHandle agpu_load_model(const char *filename);
+ModelHandle agpu_load_model(char *filename);
 
 void agpu_begin_frame();
 void agpu_end_frame();

@@ -17,6 +17,8 @@ typedef struct {
 typedef struct {
         Vertex *vertices;
         uint32_t *indices;
+
+        uint32_t material_index;
 } Mesh;
 
 void MeshFree(Mesh *mesh);
@@ -27,8 +29,6 @@ typedef struct {
 } TextureCoord;
 
 typedef struct {
-        char *name;
-
         vec3 ambient;
         vec3 specular;
 
@@ -41,13 +41,10 @@ void material_info_destroy(MaterialInfo *mat);
 
 typedef struct {
         Mesh *meshes;
-        size_t num_meshes;
 
         MaterialInfo *materials;
 } Model;
 
-Model load_obj(const char *filename);
-
-Model load_model(const char *filename);
+Model load_model(char *filename);
 
 void model_destroy(Model m);
