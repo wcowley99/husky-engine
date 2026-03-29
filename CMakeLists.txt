@@ -21,7 +21,6 @@ add_library(engine-lib
   src/renderer/command.c
   src/renderer/descriptors.c
   src/renderer/image.c
-  src/renderer/material.c
   src/renderer/pipeline.c
   src/renderer/renderer.c
   src/renderer/vkb.c
@@ -54,6 +53,7 @@ target_include_directories(engine-lib PUBLIC
   ${CMAKE_BINARY_DIR}/external/assimp/include
 
   src
+  include
 )
 
 # Build main

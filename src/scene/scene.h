@@ -14,7 +14,7 @@ typedef struct {
         Camera camera;
 
         Transform *transforms;
-        ModelHandle *models;
+        GpuModel *models;
 
         bool mouse_left_down;
         float mouse_x, mouse_y;
@@ -23,7 +23,7 @@ typedef struct {
 Scene scene_create();
 void scene_destroy(Scene *scene);
 
-void scene_add_entity(Scene *scene, Transform transform, ModelHandle model);
+void scene_add_entity(Scene *scene, Transform transform, GpuModel model);
 void scene_set_camera(Scene *scene, Camera camera);
 
 void scene_draw(Scene *scene);

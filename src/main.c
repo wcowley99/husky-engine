@@ -36,19 +36,19 @@ int main(int argc, char **argv) {
                 return -1;
         }
 
-        // ModelHandle box = agpu_load_model("assets/BoxTextured/glTF-Binary/BoxTextured.glb");
-        // ModelHandle suzanne = agpu_load_model("assets/Suzanne/glTF/Suzanne.gltf");
-        ModelHandle bard = agpu_load_model("assets/bard-1.obj");
-        // ModelHandle sponze = agpu_load_model("assets/Sponza/glTF/Sponza.gltf");
+        // GpuModel box = agpu_load_model("assets/BoxTextured/glTF-Binary/BoxTextured.glb");
+        // GpuModel suzanne = agpu_load_model("assets/Suzanne/glTF/Suzanne.gltf");
+        // GpuModel bard = agpu_load_model("assets/bard-1.obj");
+        GpuModel sponza = agpu_load_model("assets/Sponza/glTF/Sponza.gltf");
 
         g_Scene = scene_create();
         scene_set_camera(&g_Scene, camera_default());
 
         Transform transform = {0};
-        transform.scale[0] = 1.0f;
-        transform.scale[1] = 1.0f;
-        transform.scale[2] = 1.0f;
-        // scene_add_entity(&g_Scene, transform, sponze);
+        transform.scale[0] = 0.01f;
+        transform.scale[1] = 0.01f;
+        transform.scale[2] = 0.01f;
+        scene_add_entity(&g_Scene, transform, sponza);
 
         for (int i = 0; i < 10; i += 1) {
                 transform.position[0] = 1.0f;
@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
                 transform.scale[0] = i / 3.0f;
                 transform.scale[1] = i / 3.0f;
                 transform.scale[2] = i / 3.0f;
-                scene_add_entity(&g_Scene, transform, bard);
+                // scene_add_entity(&g_Scene, transform, bard);
 
                 transform.position[0] = -1.0f;
 

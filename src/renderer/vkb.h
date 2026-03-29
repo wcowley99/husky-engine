@@ -14,14 +14,6 @@
 #define MAX_INSTANCES 100000
 #define MAX_TEXTURES 5000000
 
-#define EXPECT(x)                                                                                  \
-        do {                                                                                       \
-                if (!(x)) {                                                                        \
-                        printf("[%s:%d] EXPECT failed: %s\n", __FILE__, __LINE__, #x);             \
-                        return false;                                                              \
-                }                                                                                  \
-        } while (false)
-
 #define VK_EXPECT(x)                                                                               \
         do {                                                                                       \
                 VkResult err = x;                                                                  \

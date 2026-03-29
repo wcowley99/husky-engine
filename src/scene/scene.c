@@ -16,7 +16,7 @@ void transform_to_model_matrix(Transform transform, mat4 model) {
 Scene scene_create() {
         Scene r = {0};
         r.transforms = array(Transform);
-        r.models = array(ModelHandle);
+        r.models = array(GpuModel);
         return r;
 }
 void scene_destroy(Scene *scene) {
@@ -24,7 +24,7 @@ void scene_destroy(Scene *scene) {
         array_free(scene->models);
 }
 
-void scene_add_entity(Scene *scene, Transform transform, ModelHandle model) {
+void scene_add_entity(Scene *scene, Transform transform, GpuModel model) {
         array_append(scene->transforms, transform);
         array_append(scene->models, model);
 }

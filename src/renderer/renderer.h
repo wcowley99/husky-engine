@@ -4,7 +4,7 @@
 
 #include "buffer.h"
 #include "descriptors.h"
-#include "material.h"
+#include "pipeline.h"
 
 #include "vkb.h"
 
@@ -97,12 +97,28 @@ typedef struct {
 bool RendererInit(RendererCreateInfo *c);
 void RendererShutdown();
 
+typedef enum {
+        MATERIAL_PASS_COLOR,
+        MATERIAL_PASS_TRANSPARENT,
+        MATERIAL_PASS_OTHER,
+} MaterialPass;
+
+typedef struct {
+        GraphicsPipeline *pipeline;
+        VkDescriptorSet material_set;
+        MaterialPass pass;
+} Material;
+
 typedef struct {
         uint32_t mesh;
-        uint32_t tex_index;
+        uint32_t diffuse_tex;
 
         Material *material;
-} ModelHandle;
+} GpuMesh;
+
+typedef struct {
+        GpuMesh *meshes;
+} GpuModel;
 
 typedef struct {
         uint32_t mesh;
@@ -150,11 +166,11 @@ bool begin_command_buffer(VkCommandBuffer command);
 void create_samplers();
 
 // abstract gpu functions
-ModelHandle agpu_load_model(char *filename);
+GpuModel agpu_load_model(char *filename);
 
 void agpu_begin_frame();
 void agpu_end_frame();
 
 void agpu_set_camera(Camera camera);
 
-void agpu_draw_model(ModelHandle model, mat4 transform);
+void agpu_draw_model(GpuModel model, mat4 transform);

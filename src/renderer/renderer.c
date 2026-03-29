@@ -4,11 +4,12 @@
 #include "command.h"
 #include "descriptors.h"
 #include "image.h"
-#include "material.h"
 #include "pipeline.h"
 
 #include "common/array.h"
 #include "common/util.h"
+
+#include "husky.h"
 
 #include <SDL3/SDL_vulkan.h>
 #include <cglm/cam.h>
@@ -163,9 +164,9 @@ bool frame_resources_create(FrameResources *f) {
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
         VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
 
-        EXPECT(buffer_create(g_Allocator, sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        ASSERT(buffer_create(g_Allocator, sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
-        EXPECT(buffer_create(g_Allocator, sizeof(Instance) * MAX_INSTANCES,
+        ASSERT(buffer_create(g_Allocator, sizeof(Instance) * MAX_INSTANCES,
                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, &f->instance_buffer));
 
@@ -278,8 +279,8 @@ bool swapchain_create() {
                     .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
                 };
 
-                EXPECT(image_create(&create_info, &g_SwapchainImages[i]));
-                EXPECT(frame_resources_create(&g_SwapchainFrameResources[i]));
+                ASSERT(image_create(&create_info, &g_SwapchainImages[i]));
+                ASSERT(frame_resources_create(&g_SwapchainFrameResources[i]));
         }
 
         free(images);
@@ -348,13 +349,13 @@ bool RendererInit(RendererCreateInfo *c) {
         g_Width = w;
         g_Height = h;
 
-        EXPECT(create_instance(c));
-        EXPECT(create_debug_messenger());
-        EXPECT(create_surface());
+        ASSERT(create_instance(c));
+        ASSERT(create_debug_messenger());
+        ASSERT(create_surface());
 
-        EXPECT(select_gpu());
-        EXPECT(create_device());
-        EXPECT(create_vma_allocator());
+        ASSERT(select_gpu());
+        ASSERT(create_device());
+        ASSERT(create_vma_allocator());
 
         AllocatedImageCreateInfo allocated_image_info = {
             .extent =
@@ -389,16 +390,16 @@ bool RendererInit(RendererCreateInfo *c) {
             .device = g_Device,
         };
 
-        EXPECT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
-        EXPECT(allocated_image_create(&depth_image_info, &g_DepthImage));
+        ASSERT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
+        ASSERT(allocated_image_create(&depth_image_info, &g_DepthImage));
 
         create_samplers();
 
-        EXPECT(init_descriptors());
+        ASSERT(init_descriptors());
 
-        EXPECT(swapchain_create());
+        ASSERT(swapchain_create());
 
-        EXPECT(immediate_command_create(g_Device, g_QueueFamilyIndex, g_GraphicsQueue,
+        ASSERT(immediate_command_create(g_Device, g_QueueFamilyIndex, g_GraphicsQueue,
                                         &g_ImmediateCommand));
 
         size_t gradient_size;
@@ -413,7 +414,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .shader_source = (const uint32_t *)gradient_comp,
             .shader_source_size = gradient_size / 4,
         };
-        EXPECT(compute_pipeline_create(g_Device, &pipeline_info, &g_GradientPipeline));
+        ASSERT(compute_pipeline_create(g_Device, &pipeline_info, &g_GradientPipeline));
 
         free(gradient_comp);
 
@@ -666,13 +667,25 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
         return index;
 }
 
-ModelHandle agpu_load_model(char *filename) {
+GpuModel agpu_load_model(char *filename) {
         Model m = load_model(filename);
-        ModelHandle r;
+        GpuModel r;
+        r.meshes = array(GpuMesh);
 
-        r.mesh = mesh_buffer_create(m.meshes);
-        r.material = &g_DefaultMaterial;
-        r.tex_index = gpu_upload_texture(&m.materials[1]);
+        printf("#meshes = %zu, #materials = %zu\n", array_length(m.meshes),
+               array_length(m.materials));
+
+        for (int i = 0; i < array_length(m.meshes); i++) {
+                Mesh *cpu_mesh = &m.meshes[i];
+                MaterialInfo *material = &m.materials[cpu_mesh->material_index];
+                GpuMesh mesh = {
+                    .mesh = mesh_buffer_create(cpu_mesh),
+                    .material = &g_DefaultMaterial,
+                    .diffuse_tex = gpu_upload_texture(material),
+                };
+
+                array_append(r.meshes, mesh);
+        }
 
         model_destroy(m);
 
@@ -717,7 +730,7 @@ bool init_descriptors() {
         descriptor_allocator_reserve(&g_DescriptorAllocator, global_bindings, 3, true);
         g_GlobalDescriptorLayout = descriptor_layout_create(g_Device, global_bindings, 3);
 
-        EXPECT(descriptor_allocator_create(g_Device, &g_DescriptorAllocator));
+        ASSERT(descriptor_allocator_create(g_Device, &g_DescriptorAllocator));
         g_IntermediateImageDescriptors =
             descriptor_allocate(&g_DescriptorAllocator, &g_IntermediateImageDescriptorLayout);
 
@@ -1037,18 +1050,23 @@ void agpu_end_frame() {
         Instance *ssbo =
             (Instance *)buffer_mmap(&g_CurrentFrameResources->instance_buffer, g_Allocator);
 
-        DrawBatch batch = draw_batch_create(g_RenderObjects[0], 0);
+        uint32_t instance_count = 0;
+
+        DrawBatch batch = draw_batch_create(g_RenderObjects[0], instance_count);
         draw_batch_add(&batch, g_RenderObjects[0], ssbo);
+        instance_count++;
 
         for (int i = 1; i < array_length(g_RenderObjects); i += 1) {
                 if (!render_object_compatible(batch.object, g_RenderObjects[i])) {
                         draw_batch_draw(&batch);
 
-                        batch = draw_batch_create(g_RenderObjects[i], i);
+                        batch = draw_batch_create(g_RenderObjects[i], instance_count);
                         draw_batch_add(&batch, g_RenderObjects[i], ssbo);
                 } else {
                         draw_batch_add(&batch, g_RenderObjects[i], ssbo);
                 }
+
+                instance_count++;
         }
 
         draw_batch_draw(&batch);
@@ -1093,15 +1111,18 @@ void agpu_set_camera(Camera camera) {
         DrawCommandSetSceneData(&scene);
 }
 
-void agpu_draw_model(ModelHandle model, mat4 transform) {
-        RenderObject obj = {
-            .material = model.material,
-            .mesh = model.mesh,
-            .tex_index = model.tex_index,
-        };
-        glm_mat4_dup(transform, obj.transform);
+void agpu_draw_model(GpuModel model, mat4 transform) {
+        for (int i = 0; i < array_length(model.meshes); i++) {
+                GpuMesh mesh = model.meshes[i];
+                RenderObject obj = {
+                    .material = mesh.material,
+                    .mesh = mesh.mesh,
+                    .tex_index = mesh.diffuse_tex,
+                };
+                glm_mat4_dup(transform, obj.transform);
 
-        array_append(g_RenderObjects, obj);
+                array_append(g_RenderObjects, obj);
+        }
 }
 
 bool render_object_compatible(RenderObject a, RenderObject b) {

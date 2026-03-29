@@ -2,6 +2,8 @@
 
 #include "common/util.h"
 
+#include "husky.h"
+
 #include <stdlib.h>
 
 bool create_shader_module(VkDevice device, const uint32_t *bytes, size_t len,
@@ -92,9 +94,9 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
 
         VkShaderModule vertex;
         VkShaderModule fragment;
-        EXPECT(create_shader_module(device, create_info->vertex_shader,
+        ASSERT(create_shader_module(device, create_info->vertex_shader,
                                     create_info->vertex_shader_size, &vertex));
-        EXPECT(create_shader_module(device, create_info->fragment_shader,
+        ASSERT(create_shader_module(device, create_info->fragment_shader,
                                     create_info->fragment_shader_size, &fragment));
 
         VkPipelineShaderStageCreateInfo shaders[] = {
@@ -222,7 +224,7 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
         VK_EXPECT(result);
 
         VkShaderModule compute;
-        EXPECT(
+        ASSERT(
             create_shader_module(device, info->shader_source, info->shader_source_size, &compute));
 
         VkComputePipelineCreateInfo pipeline_info = {

@@ -2,7 +2,7 @@
 
 #include "buffer.h"
 
-#include <assert.h>
+#include "husky.h"
 
 bool image_create(ImageCreateInfo *info, Image *image) {
         image->image = info->image;
@@ -173,10 +173,10 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
             .device = info->device,
         };
 
-        EXPECT(image_create(&image_info, &image->image));
+        ASSERT(image_create(&image_info, &image->image));
 
         if (info->data) {
-                assert(info->imm);
+                ASSERT(info->imm);
 
                 size_t size = info->extent.width * info->extent.height * info->extent.depth * 4;
                 Buffer staging_buffer;
