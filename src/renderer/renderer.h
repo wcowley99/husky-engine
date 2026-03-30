@@ -152,15 +152,6 @@ bool init_descriptors();
 
 bool create_vma_allocator();
 
-bool create_instance(RendererCreateInfo *c);
-bool create_debug_messenger();
-bool create_surface();
-
-bool is_gpu_suitable(VkPhysicalDevice gpu);
-bool select_gpu();
-
-bool create_device();
-
 bool begin_command_buffer(VkCommandBuffer command);
 
 void create_samplers();

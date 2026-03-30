@@ -6,6 +6,6 @@
         do {                                                                                       \
                 if (!(x)) {                                                                        \
                         printf("[%s:%d] ASSERT failed: %s\n", __FILE__, __LINE__, #x);             \
-                        return false;                                                              \
+                        exit(1);                                                                   \
                 }                                                                                  \
-        } while (false)
+        } while (0)

@@ -1,5 +1,8 @@
 #include "renderer.h"
 
+#include "device.h"
+#include "platform.h"
+
 #include "buffer.h"
 #include "command.h"
 #include "descriptors.h"
@@ -11,7 +14,6 @@
 
 #include "husky.h"
 
-#include <SDL3/SDL_vulkan.h>
 #include <cglm/cam.h>
 
 #include <malloc.h>
@@ -19,17 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-SDL_Window *g_Window;
-VkSurfaceKHR g_Surface;
-
-VkInstance g_Instance;
-VkDebugUtilsMessengerEXT g_DebugMessenger;
-
-VkPhysicalDevice g_PhysicalDevice;
-
-VkDevice g_Device;
-uint32_t g_QueueFamilyIndex;
-VkQueue g_GraphicsQueue;
+static device_t g_device;
 
 // Swapchain
 VkSwapchainKHR g_Swapchain;
@@ -72,9 +64,6 @@ AllocatedImage *g_Textures;
 
 RenderObject *g_RenderObjects;
 
-uint32_t g_Width;
-uint32_t g_Height;
-
 Material g_DefaultMaterial;
 
 VkSampler g_LinearSampler;
@@ -101,7 +90,7 @@ uint32_t mesh_buffer_create(Mesh *mesh) {
             .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
             .buffer = buffer->vertex.buffer,
         };
-        buffer->vertex_address = vkGetBufferDeviceAddress(g_Device, &address_info);
+        buffer->vertex_address = vkGetBufferDeviceAddress(g_device.device, &address_info);
 
         Buffer staging_buffer;
         buffer_create(g_Allocator, vertex_buffer_size + index_buffer_size,
@@ -139,9 +128,9 @@ bool frame_resources_create(FrameResources *f) {
         VkCommandPoolCreateInfo command_pool_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = g_QueueFamilyIndex,
+            .queueFamilyIndex = g_device.queue_family_index,
         };
-        VK_EXPECT(vkCreateCommandPool(g_Device, &command_pool_info, NULL, &f->pool));
+        VK_EXPECT(vkCreateCommandPool(g_device.device, &command_pool_info, NULL, &f->pool));
 
         VkCommandBufferAllocateInfo alloc_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -149,20 +138,21 @@ bool frame_resources_create(FrameResources *f) {
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
         };
-        VK_EXPECT(vkAllocateCommandBuffers(g_Device, &alloc_info, &f->command));
+        VK_EXPECT(vkAllocateCommandBuffers(g_device.device, &alloc_info, &f->command));
 
         VkFenceCreateInfo fence_info = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         };
-        VK_EXPECT(vkCreateFence(g_Device, &fence_info, NULL, &f->render_fence));
+        VK_EXPECT(vkCreateFence(g_device.device, &fence_info, NULL, &f->render_fence));
 
         VkSemaphoreCreateInfo semaphore_info = {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .flags = 0,
         };
-        VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->swapchain_semaphore));
-        VK_EXPECT(vkCreateSemaphore(g_Device, &semaphore_info, NULL, &f->render_semaphore));
+        VK_EXPECT(
+            vkCreateSemaphore(g_device.device, &semaphore_info, NULL, &f->swapchain_semaphore));
+        VK_EXPECT(vkCreateSemaphore(g_device.device, &semaphore_info, NULL, &f->render_semaphore));
 
         ASSERT(buffer_create(g_Allocator, sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
@@ -180,16 +170,17 @@ bool frame_resources_create(FrameResources *f) {
 }
 
 void frame_resources_destroy(FrameResources *f) {
-        vkDestroySemaphore(g_Device, f->swapchain_semaphore, NULL);
-        vkDestroySemaphore(g_Device, f->render_semaphore, NULL);
+        vkDestroySemaphore(g_device.device, f->swapchain_semaphore, NULL);
+        vkDestroySemaphore(g_device.device, f->render_semaphore, NULL);
 
-        vkDestroyFence(g_Device, f->render_fence, NULL);
+        vkDestroyFence(g_device.device, f->render_fence, NULL);
 
-        vkDestroyCommandPool(g_Device, f->pool, NULL);
+        vkDestroyCommandPool(g_device.device, f->pool, NULL);
 
-        vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1,
+        vkFreeDescriptorSets(g_device.device, g_DescriptorAllocator.pool, 1,
                              &f->global_descriptors.descriptor);
-        // vkFreeDescriptorSets(g_Device, g_DescriptorAllocator.pool, 1, &f->mat_descriptors);
+        // vkFreeDescriptorSets(g_device.device, g_DescriptorAllocator.pool, 1,
+        // &f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
         buffer_destroy(&f->instance_buffer);
@@ -227,7 +218,7 @@ bool frame_resources_submit(FrameResources *f) {
             .pCommandBufferInfos = &command_info,
         };
 
-        VK_EXPECT(vkQueueSubmit2(g_GraphicsQueue, 1, &submit_info, f->render_fence));
+        VK_EXPECT(vkQueueSubmit2(g_device.graphics_queue, 1, &submit_info, f->render_fence));
         return true;
 }
 
@@ -236,13 +227,15 @@ bool frame_resources_submit(FrameResources *f) {
 ///////////////////////////////////////
 bool swapchain_create() {
         VkSurfaceCapabilitiesKHR capabilities;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, g_Surface, &capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_device.physical_device, g_device.surface,
+                                                  &capabilities);
 
-        VkExtent2D extent = {g_Width, g_Height};
+        VkExtent2D extent;
+        platform_get_size(&extent.width, &extent.height);
 
         VkSwapchainCreateInfoKHR create_info = {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface = g_Surface,
+            .surface = g_device.surface,
             .presentMode = VK_PRESENT_MODE_FIFO_KHR,
             .minImageCount = NUM_FRAMES,
             .imageFormat = g_SwapchainFormat,
@@ -257,12 +250,12 @@ bool swapchain_create() {
             .oldSwapchain = VK_NULL_HANDLE,
         };
 
-        VK_EXPECT(vkCreateSwapchainKHR(g_Device, &create_info, NULL, &g_Swapchain));
+        VK_EXPECT(vkCreateSwapchainKHR(g_device.device, &create_info, NULL, &g_Swapchain));
 
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_SwapchainImageCount, NULL);
+        vkGetSwapchainImagesKHR(g_device.device, g_Swapchain, &g_SwapchainImageCount, NULL);
 
         VkImage *images = malloc(sizeof(VkImage) * g_SwapchainImageCount);
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_SwapchainImageCount, images);
+        vkGetSwapchainImagesKHR(g_device.device, g_Swapchain, &g_SwapchainImageCount, images);
 
         g_SwapchainImages = malloc(sizeof(Image) * g_SwapchainImageCount);
         g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
@@ -271,7 +264,7 @@ bool swapchain_create() {
 
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
                 ImageCreateInfo create_info = {
-                    .device = g_Device,
+                    .device = g_device.device,
                     .image = images[i],
                     .extent = image_extent,
                     .format = g_SwapchainFormat,
@@ -290,16 +283,16 @@ bool swapchain_create() {
 
 void swapchain_destroy() {
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
-                image_destroy(&g_SwapchainImages[i], g_Device);
+                image_destroy(&g_SwapchainImages[i], g_device.device);
                 frame_resources_destroy(&g_SwapchainFrameResources[i]);
         }
         free(g_SwapchainImages);
         free(g_SwapchainFrameResources);
-        vkDestroySwapchainKHR(g_Device, g_Swapchain, NULL);
+        vkDestroySwapchainKHR(g_device.device, g_Swapchain, NULL);
 }
 
 void SwapchainRecreate() {
-        vkDeviceWaitIdle(g_Device);
+        vkDeviceWaitIdle(g_device.device);
 
         swapchain_destroy();
         swapchain_create();
@@ -310,9 +303,9 @@ bool swapchain_next_frame() {
         // todo : is it ok to expect on vkWaitForFences here? If function RV
         // represents whether or not to recreate swapchain, should you recreate if
         // fence fails (times out) or quit?
-        VK_EXPECT(vkWaitForFences(g_Device, 1, &next->render_fence, VK_TRUE, 1000000000));
+        VK_EXPECT(vkWaitForFences(g_device.device, 1, &next->render_fence, VK_TRUE, 1000000000));
 
-        VK_EXPECT(vkAcquireNextImageKHR(g_Device, g_Swapchain, 1000000000,
+        VK_EXPECT(vkAcquireNextImageKHR(g_device.device, g_Swapchain, 1000000000,
                                         next->swapchain_semaphore, VK_NULL_HANDLE,
                                         &g_CurrentSwapchainImageIndex));
 
@@ -327,34 +320,9 @@ bool swapchain_next_frame() {
 /// Renderer
 ///////////////////////////////////////
 bool RendererInit(RendererCreateInfo *c) {
-        VK_EXPECT(volkInitialize());
+        platform_init(c->width, c->height, c->title);
+        g_device = device_create();
 
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-                printf("Failed to initialize SDL: %s\n", SDL_GetError());
-                return false;
-        }
-
-        g_Window = SDL_CreateWindow(c->title, c->width, c->height,
-                                    SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
-        if (!g_Window) {
-                printf("Failed to create Window: %s\n", SDL_GetError());
-                return false;
-        }
-
-        int w, h;
-        SDL_GetWindowSize(g_Window, &w, &h);
-
-        printf("w: %d, h: %d\n", w, h);
-
-        g_Width = w;
-        g_Height = h;
-
-        ASSERT(create_instance(c));
-        ASSERT(create_debug_messenger());
-        ASSERT(create_surface());
-
-        ASSERT(select_gpu());
-        ASSERT(create_device());
         ASSERT(create_vma_allocator());
 
         AllocatedImageCreateInfo allocated_image_info = {
@@ -371,7 +339,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
             .allocator = g_Allocator,
-            .device = g_Device,
+            .device = g_device.device,
         };
 
         AllocatedImageCreateInfo depth_image_info = {
@@ -387,7 +355,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
             .usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             .allocator = g_Allocator,
-            .device = g_Device,
+            .device = g_device.device,
         };
 
         ASSERT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
@@ -399,8 +367,8 @@ bool RendererInit(RendererCreateInfo *c) {
 
         ASSERT(swapchain_create());
 
-        ASSERT(immediate_command_create(g_Device, g_QueueFamilyIndex, g_GraphicsQueue,
-                                        &g_ImmediateCommand));
+        ASSERT(immediate_command_create(g_device.device, g_device.queue_family_index,
+                                        g_device.graphics_queue, &g_ImmediateCommand));
 
         size_t gradient_size;
         char *gradient_comp = ReadFile("shaders/gradient2.comp.spv", &gradient_size);
@@ -414,12 +382,12 @@ bool RendererInit(RendererCreateInfo *c) {
             .shader_source = (const uint32_t *)gradient_comp,
             .shader_source_size = gradient_size / 4,
         };
-        ASSERT(compute_pipeline_create(g_Device, &pipeline_info, &g_GradientPipeline));
+        ASSERT(compute_pipeline_create(g_device.device, &pipeline_info, &g_GradientPipeline));
 
         free(gradient_comp);
 
         g_PbrPipeline =
-            create_pbr_pipeline(g_Device, g_GlobalDescriptorLayout.layout,
+            create_pbr_pipeline(g_device.device, g_GlobalDescriptorLayout.layout,
                                 g_MaterialDescriptorLayout, g_IntermediateImage.image.format);
 
         g_MeshBuffers = array(MeshBuffer);
@@ -432,16 +400,16 @@ bool RendererInit(RendererCreateInfo *c) {
 
 void RendererShutdown() {
         // Make sure the GPU has finished all work
-        vkDeviceWaitIdle(g_Device);
+        vkDeviceWaitIdle(g_device.device);
 
-        compute_pipeline_destroy(&g_GradientPipeline, g_Device);
-        graphics_pipeline_destroy(&g_PbrPipeline, g_Device);
+        compute_pipeline_destroy(&g_GradientPipeline, g_device.device);
+        graphics_pipeline_destroy(&g_PbrPipeline, g_device.device);
 
-        vkDestroySampler(g_Device, g_LinearSampler, NULL);
-        vkDestroySampler(g_Device, g_NearestSampler, NULL);
+        vkDestroySampler(g_device.device, g_LinearSampler, NULL);
+        vkDestroySampler(g_device.device, g_NearestSampler, NULL);
 
-        allocated_image_destroy(&g_IntermediateImage, g_Device);
-        allocated_image_destroy(&g_DepthImage, g_Device);
+        allocated_image_destroy(&g_IntermediateImage, g_device.device);
+        allocated_image_destroy(&g_DepthImage, g_device.device);
 
         for (int i = 0; i < array_length(g_MeshBuffers); i += 1) {
                 mesh_buffer_destroy(&g_MeshBuffers[i]);
@@ -449,7 +417,7 @@ void RendererShutdown() {
         array_free(g_MeshBuffers);
 
         for (int i = 0; i < array_length(g_Textures); i += 1) {
-                allocated_image_destroy(&g_Textures[i], g_Device);
+                allocated_image_destroy(&g_Textures[i], g_device.device);
         }
         array_free(g_Textures);
         array_free(g_RenderObjects);
@@ -460,18 +428,12 @@ void RendererShutdown() {
         descriptor_allocator_destroy(&g_DescriptorAllocator);
         descriptor_layout_destroy(&g_GlobalDescriptorLayout);
         descriptor_layout_destroy(&g_IntermediateImageDescriptorLayout);
-        // vkDestroyDescriptorSetLayout(g_Device, g_MaterialDescriptorLayout, NULL);
+        // vkDestroyDescriptorSetLayout(g_device.device, g_MaterialDescriptorLayout, NULL);
 
         vmaDestroyAllocator(g_Allocator);
 
-        vkDestroyDevice(g_Device, NULL);
-
-        vkDestroySurfaceKHR(g_Instance, g_Surface, NULL);
-        vkDestroyDebugUtilsMessengerEXT(g_Instance, g_DebugMessenger, NULL);
-        vkDestroyInstance(g_Instance, NULL);
-
-        SDL_DestroyWindow(g_Window);
-        SDL_Quit();
+        device_shutdown(&g_device);
+        platform_shutdown();
 }
 
 void DrawCommandClear(Image *image, VkClearColorValue color) {
@@ -605,7 +567,7 @@ bool DrawCommandBeginFrame() {
                 SwapchainRecreate();
         }
 
-        vkResetFences(g_Device, 1, &g_CurrentFrameResources->render_fence);
+        vkResetFences(g_device.device, 1, &g_CurrentFrameResources->render_fence);
         begin_command_buffer(g_CurrentFrameResources->command);
 
         return true;
@@ -627,15 +589,14 @@ void DrawCommandEndFrame() {
             .pWaitSemaphores = &g_CurrentFrameResources->render_semaphore,
             .pImageIndices = &g_CurrentSwapchainImageIndex,
         };
-        VkResult result = vkQueuePresentKHR(g_GraphicsQueue, &present_info);
+        VkResult result = vkQueuePresentKHR(g_device.graphics_queue, &present_info);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
                 printf("out of date/suboptimal swapchain.\n");
                 SwapchainRecreate();
         }
 
-        // Refresh the window
-        SDL_UpdateWindowSurface(g_Window);
+        platform_update_window();
 }
 
 uint32_t gpu_upload_texture(MaterialInfo *mats) {
@@ -647,7 +608,7 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
             .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
 
-            .device = g_Device,
+            .device = g_device.device,
             .allocator = g_Allocator,
 
             .data = (uint32_t *)mats->diffuse_tex,
@@ -692,15 +653,6 @@ GpuModel agpu_load_model(char *filename) {
         return r;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
-        printf("[Validation]: %s\n", pCallbackData->pMessage);
-
-        return VK_FALSE;
-}
-
 bool init_descriptors() {
         descriptor_allocator_init(&g_DescriptorAllocator, NUM_FRAMES);
 
@@ -712,7 +664,7 @@ bool init_descriptors() {
 
         descriptor_allocator_reserve(&g_DescriptorAllocator, draw_image_bindings, 1, false);
         g_IntermediateImageDescriptorLayout =
-            descriptor_layout_create(g_Device, draw_image_bindings, 1);
+            descriptor_layout_create(g_device.device, draw_image_bindings, 1);
 
         DescriptorBinding global_bindings[3] = {
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -728,9 +680,9 @@ bool init_descriptors() {
         };
 
         descriptor_allocator_reserve(&g_DescriptorAllocator, global_bindings, 3, true);
-        g_GlobalDescriptorLayout = descriptor_layout_create(g_Device, global_bindings, 3);
+        g_GlobalDescriptorLayout = descriptor_layout_create(g_device.device, global_bindings, 3);
 
-        ASSERT(descriptor_allocator_create(g_Device, &g_DescriptorAllocator));
+        ASSERT(descriptor_allocator_create(g_device.device, &g_DescriptorAllocator));
         g_IntermediateImageDescriptors =
             descriptor_allocate(&g_DescriptorAllocator, &g_IntermediateImageDescriptorLayout);
 
@@ -746,204 +698,15 @@ bool create_vma_allocator() {
         };
 
         VmaAllocatorCreateInfo create_info = {
-            .physicalDevice = g_PhysicalDevice,
-            .instance = g_Instance,
-            .device = g_Device,
+            .physicalDevice = g_device.physical_device,
+            .instance = g_device.instance,
+            .device = g_device.device,
             .vulkanApiVersion = VK_API_VERSION_1_3,
             .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
             .pVulkanFunctions = &functions,
         };
 
         VK_EXPECT(vmaCreateAllocator(&create_info, &g_Allocator));
-        return true;
-}
-
-bool create_instance(RendererCreateInfo *c) {
-        VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                                      .pApplicationName = c->title,
-                                      .applicationVersion = VK_MAKE_VERSION(1, 3, 0),
-                                      .pEngineName = "No Engine",
-                                      .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-                                      .apiVersion = VK_API_VERSION_1_3};
-
-        VkDebugUtilsMessengerCreateInfoEXT validation_callback = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = validation_message_callback,
-        };
-
-        uint32_t count = 0;
-        const char *const *sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&count);
-
-        printf("SDL Extensions:\n");
-        for (uint32_t i = 0; i < count; i += 1) {
-                printf("  - %s\n", sdl_extensions[i]);
-        }
-
-        const char **extensions = malloc(sizeof(const char *) * (count + 1));
-        for (uint32_t i = 0; i < count; i += 1) {
-                extensions[i] = sdl_extensions[i];
-        }
-        extensions[count] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-
-        const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
-
-        VkInstanceCreateInfo create_info = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-                                            .pApplicationInfo = &app_info,
-                                            .enabledExtensionCount = count + 1,
-                                            .ppEnabledExtensionNames = extensions,
-                                            .enabledLayerCount = 1,
-                                            .ppEnabledLayerNames = layers,
-                                            .pNext = &validation_callback};
-
-        VK_EXPECT(vkCreateInstance(&create_info, NULL, &g_Instance));
-        volkLoadInstance(g_Instance);
-
-        free(extensions);
-        return true;
-}
-
-bool create_debug_messenger() {
-        VkDebugUtilsMessengerCreateInfoEXT create_info = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = validation_message_callback,
-        };
-
-        VK_EXPECT(
-            vkCreateDebugUtilsMessengerEXT(g_Instance, &create_info, NULL, &g_DebugMessenger));
-        return true;
-}
-
-bool create_surface() {
-        if (!SDL_Vulkan_CreateSurface(g_Window, g_Instance, NULL, &g_Surface)) {
-                printf("SDL failed to create window: %s.\n", SDL_GetError());
-                return false;
-        }
-
-        return true;
-}
-
-bool is_gpu_suitable(VkPhysicalDevice gpu) {
-        VkPhysicalDeviceProperties p;
-        VkPhysicalDeviceVulkan12Features f12 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-        VkPhysicalDeviceVulkan13Features f13 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = &f12};
-        VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                       .pNext = &f13};
-
-        vkGetPhysicalDeviceProperties(gpu, &p);
-        vkGetPhysicalDeviceFeatures2(gpu, &f);
-
-        if (p.apiVersion < VK_API_VERSION_1_3) {
-                return false;
-        }
-
-        if (!f12.bufferDeviceAddress || !f12.descriptorIndexing || !f13.dynamicRendering ||
-            !f13.synchronization2 || !f.features.robustBufferAccess ||
-            !f12.descriptorBindingPartiallyBound || !f12.runtimeDescriptorArray) {
-                return false;
-        }
-
-        uint32_t count = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(gpu, &count, NULL);
-
-        VkQueueFamilyProperties *properties = malloc(sizeof(VkQueueFamilyProperties) * count);
-        vkGetPhysicalDeviceQueueFamilyProperties(gpu, &count, properties);
-
-        for (uint32_t i = 0; i < count; i += 1) {
-                VkBool32 support;
-                VK_EXPECT(vkGetPhysicalDeviceSurfaceSupportKHR(gpu, i, g_Surface, &support));
-
-                if (support && properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                        g_QueueFamilyIndex = i;
-                        printf("Selected Device: %s.\n", p.deviceName);
-                }
-        }
-
-        free(properties);
-        return true;
-}
-
-bool select_gpu() {
-        uint32_t count = 0;
-        vkEnumeratePhysicalDevices(g_Instance, &count, NULL);
-
-        if (count == 0) {
-                printf("Failed to find GPUs with Vulkan support.\n");
-                return false;
-        }
-
-        VkPhysicalDevice *gpus = malloc(sizeof(VkPhysicalDevice *) * count);
-        vkEnumeratePhysicalDevices(g_Instance, &count, gpus);
-
-        for (uint32_t i = 0; i < count; i += 1) {
-                if (is_gpu_suitable(gpus[i])) {
-                        g_PhysicalDevice = gpus[i];
-                        break;
-                }
-        }
-
-        free(gpus);
-        return true;
-}
-
-bool create_device() {
-        float priorities[] = {1.0f};
-        VkDeviceQueueCreateInfo queue_info = {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = g_QueueFamilyIndex,
-            .queueCount = 1,
-            .pQueuePriorities = priorities,
-        };
-
-        const char *extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-
-        VkPhysicalDeviceVulkan12Features f12 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-            .bufferDeviceAddress = VK_TRUE,
-            .descriptorIndexing = VK_TRUE,
-            .runtimeDescriptorArray = VK_TRUE,
-            .descriptorBindingPartiallyBound = VK_TRUE,
-            .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-            .descriptorBindingVariableDescriptorCount = VK_TRUE,
-            .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
-        };
-        VkPhysicalDeviceVulkan13Features f13 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-            .dynamicRendering = VK_TRUE,
-            .synchronization2 = VK_TRUE,
-            .pNext = &f12,
-        };
-        VkPhysicalDeviceFeatures2 f = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                       .features.robustBufferAccess = VK_TRUE,
-                                       .pNext = &f13};
-
-        VkDeviceCreateInfo create_info = {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pQueueCreateInfos = &queue_info,
-            .queueCreateInfoCount = 1,
-            .ppEnabledExtensionNames = extensions,
-            .enabledExtensionCount = 1,
-            .pNext = &f,
-        };
-
-        VK_EXPECT(vkCreateDevice(g_PhysicalDevice, &create_info, NULL, &g_Device));
-        volkLoadDevice(g_Device);
-
-        vkGetDeviceQueue(g_Device, g_QueueFamilyIndex, 0, &g_GraphicsQueue);
-
         return true;
 }
 
@@ -965,12 +728,12 @@ void create_samplers() {
         sampler_info.magFilter = VK_FILTER_LINEAR;
         sampler_info.minFilter = VK_FILTER_LINEAR;
 
-        vkCreateSampler(g_Device, &sampler_info, NULL, &g_LinearSampler);
+        vkCreateSampler(g_device.device, &sampler_info, NULL, &g_LinearSampler);
 
         sampler_info.magFilter = VK_FILTER_NEAREST;
         sampler_info.minFilter = VK_FILTER_NEAREST;
 
-        vkCreateSampler(g_Device, &sampler_info, NULL, &g_NearestSampler);
+        vkCreateSampler(g_device.device, &sampler_info, NULL, &g_NearestSampler);
 }
 
 DrawBatch draw_batch_create(RenderObject obj, uint32_t first_instance) {
@@ -1002,13 +765,7 @@ void draw_batch_draw(DrawBatch *batch) {
 }
 
 void agpu_begin_frame() {
-        int w, h;
-        SDL_GetWindowSize(g_Window, &w, &h);
-
-        if (w != g_Width || h != g_Height) {
-                printf("Resizing Swapchain: w = %d, h = %d\n", w, h);
-                g_Width = w;
-                g_Height = h;
+        if (platform_size_changed()) {
                 SwapchainRecreate();
         }
 
@@ -1095,7 +852,10 @@ void agpu_set_camera(Camera camera) {
         glm_look(eye, camera.target, camera.up, scene.view);
         glm_scale(scene.view, flip);
 
-        glm_perspective(glm_rad(camera.fov), (float)g_Width / g_Height, 0.1f, 100.0f, scene.proj);
+        uint32_t w, h;
+        platform_get_size(&w, &h);
+
+        glm_perspective(glm_rad(camera.fov), (float)w / h, 0.1f, 100.0f, scene.proj);
 
         glm_mat4_mul(scene.proj, scene.view, scene.viewproj);
 

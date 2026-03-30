@@ -10,6 +10,7 @@
 #include <volk.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #define MAX_INSTANCES 100000
 #define MAX_TEXTURES 5000000
@@ -20,6 +21,6 @@
                 if (err != VK_SUCCESS) {                                                           \
                         printf("[%s:%d] VK_EXPECT failed: %s\n", __FILE__, __LINE__,               \
                                string_VkResult(err));                                              \
-                        return false;                                                              \
+                        exit(1);                                                                   \
                 }                                                                                  \
-        } while (false)
+        } while (0)

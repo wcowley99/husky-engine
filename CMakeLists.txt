@@ -20,9 +20,12 @@ add_library(engine-lib
   src/renderer/buffer.c
   src/renderer/command.c
   src/renderer/descriptors.c
+  src/renderer/device.c
   src/renderer/image.c
   src/renderer/pipeline.c
+  src/renderer/platform.c
   src/renderer/renderer.c
+  src/renderer/swapchain.c
   src/renderer/vkb.c
 
   src/common/array.c
