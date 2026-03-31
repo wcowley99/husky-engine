@@ -180,8 +180,8 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
 
                 size_t size = info->extent.width * info->extent.height * info->extent.depth * 4;
                 Buffer staging_buffer;
-                buffer_create(info->allocator, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                              VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
+                buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY,
+                              &staging_buffer);
                 vmaCopyMemoryToAllocation(info->allocator, info->data, staging_buffer.allocation, 0,
                                           size);
 

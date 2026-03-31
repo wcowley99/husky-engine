@@ -2,6 +2,8 @@
 
 #include "common/util.h"
 
+#include "descriptors.h"
+
 #include "husky.h"
 
 #include <stdlib.h>
@@ -122,6 +124,7 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
             .pushConstantRangeCount = create_info->num_push_constants,
         };
 
+        printf("graphics descriptor: %p\n", *create_info->descriptors);
         VK_EXPECT(vkCreatePipelineLayout(device, &layout_info, NULL, &pipeline->layout));
 
         VkGraphicsPipelineCreateInfo pipeline_info = {
@@ -165,7 +168,7 @@ GraphicsPipeline create_pbr_pipeline(VkDevice device, VkDescriptorSetLayout glob
         char *vert = ReadFile("shaders/mesh.vert.spv", &vert_size);
         char *frag = ReadFile("shaders/mesh.frag.spv", &frag_size);
 
-        VkDescriptorSetLayout layouts[] = {global};
+        VkDescriptorSetLayout layouts[] = {global_descriptor_layout()->layout};
         GraphicsPipelineCreateInfo mesh_pipeline_info = {
             .descriptors = layouts,
             .num_descriptors = 1,
@@ -211,6 +214,7 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
                 ranges[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         }
 
+        printf("compute descriptor: %p\n", *info->descriptors);
         VkPipelineLayoutCreateInfo layout_create_info = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .pSetLayouts = info->descriptors,

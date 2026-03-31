@@ -21,23 +21,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
 
 typedef struct {
-        mat4 view;
-        mat4 proj;
-        mat4 viewproj;
-
-        vec4 ambientColor;
-        vec4 sunlightDirection;
-        vec4 sunlightColor;
-} SceneData;
-
-typedef struct {
-        mat4 model;
-        VkDeviceAddress vertex_address;
-        int tex_index;
-        int padding;
-} Instance;
-
-typedef struct {
         Buffer vertex;
         Buffer index;
         VkDeviceAddress vertex_address;
@@ -47,39 +30,6 @@ typedef struct {
 
 uint32_t mesh_buffer_create(Mesh *mesh);
 void mesh_buffer_destroy(MeshBuffer *buffer);
-
-///////////////////////////////////////
-/// FrameResources
-///////////////////////////////////////
-typedef struct {
-        VkCommandPool pool;
-        VkCommandBuffer command;
-        VkSemaphore swapchain_semaphore;
-        VkSemaphore render_semaphore;
-        VkFence render_fence;
-
-        Buffer camera_uniform;
-        Buffer instance_buffer;
-
-        Descriptor global_descriptors;
-        VkDescriptorSet mat_descriptors;
-} FrameResources;
-
-bool frame_resources_create(FrameResources *f);
-
-void frame_resources_destroy(FrameResources *f);
-
-bool frame_resources_submit(FrameResources *f);
-
-///////////////////////////////////////
-/// Swapchain
-///////////////////////////////////////
-
-bool swapchain_create();
-void swapchain_destroy();
-void SwapchainRecreate();
-
-bool swapchain_next_frame();
 
 ///////////////////////////////////////
 /// Renderer
@@ -151,8 +101,6 @@ void draw_batch_draw(DrawBatch *batch);
 bool init_descriptors();
 
 bool create_vma_allocator();
-
-bool begin_command_buffer(VkCommandBuffer command);
 
 void create_samplers();
 

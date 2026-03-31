@@ -24,7 +24,7 @@ add_library(engine-lib
   src/renderer/pipeline.c
   src/renderer/platform.c
   src/renderer/renderer.c
-  # src/renderer/swapchain.c
+  src/renderer/swapchain.c
   src/renderer/vk_context.c
   src/renderer/vkb.c
 

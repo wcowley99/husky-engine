@@ -1,10 +1,24 @@
 #include "descriptors.h"
 
+#include "vk_context.h"
 #include "vkb.h"
 
 #include "common/array.h"
 
 #include <stdlib.h>
+
+typedef struct {
+        VkDescriptorPool pool;
+
+        VkDescriptorPoolSize *pool_sizes;
+        uint32_t num_frames;
+
+        VkDevice device;
+} DescriptorAllocator;
+
+static DescriptorAllocator g_descriptor_allocator;
+
+static DescriptorLayout g_global_descriptor_layout;
 
 DescriptorLayout descriptor_layout_create(VkDevice device, DescriptorBinding *bindings,
                                           uint32_t count) {
@@ -70,36 +84,51 @@ void descriptor_layout_destroy(DescriptorLayout *layout) {
         array_free(layout->variable);
 }
 
-void descriptor_allocator_init(DescriptorAllocator *allocator, uint32_t num_frames) {
-        allocator->pool_sizes = array(VkDescriptorPoolSize);
-        allocator->num_frames = num_frames;
+void global_descriptor_layout_init() {
+        DescriptorBinding global_bindings[3] = {
+            {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_ALL_GRAPHICS},
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_VERTEX_BIT},
+            {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .count = MAX_TEXTURES,
+             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+             .variable = true},
+        };
+        uint32_t count = sizeof(global_bindings) / sizeof(DescriptorBinding);
+
+        descriptor_allocator_reserve(global_bindings, count, true);
+        g_global_descriptor_layout =
+            descriptor_layout_create(vk_context_device(), global_bindings, 3);
+}
+DescriptorLayout *global_descriptor_layout() { return &g_global_descriptor_layout; }
+
+void descriptor_allocator_init(uint32_t num_frames) {
+        g_descriptor_allocator.pool_sizes = array(VkDescriptorPoolSize);
+        g_descriptor_allocator.num_frames = num_frames;
 }
 
-void descriptor_allocator_destroy(DescriptorAllocator *allocator) {
-        vkDestroyDescriptorPool(allocator->device, allocator->pool, NULL);
-        array_free(allocator->pool_sizes);
+void descriptor_allocator_destroy() {
+        vkDestroyDescriptorPool(g_descriptor_allocator.device, g_descriptor_allocator.pool, NULL);
+        array_free(g_descriptor_allocator.pool_sizes);
 }
 
-void descriptor_allocator_clear(DescriptorAllocator *allocator) {
-        vkResetDescriptorPool(allocator->device, allocator->pool, 0);
+void descriptor_allocator_clear() {
+        vkResetDescriptorPool(g_descriptor_allocator.device, g_descriptor_allocator.pool, 0);
 }
 
-bool descriptor_allocator_allocate(DescriptorAllocator *allocator, VkDescriptorSetLayout *layouts,
-                                   uint32_t count, VkDescriptorSet *sets, void *pNext) {
-
-        return true;
-}
-
-void descriptor_allocator_reserve(DescriptorAllocator *allocator, DescriptorBinding *bindings,
-                                  uint32_t count, bool per_frame_descriptor) {
+void descriptor_allocator_reserve(DescriptorBinding *bindings, uint32_t count,
+                                  bool per_frame_descriptor) {
         for (int b = 0; b < count; b += 1) {
                 VkDescriptorType type = bindings[b].type;
-                uint32_t count =
-                    bindings[b].count * (per_frame_descriptor ? allocator->num_frames : 1);
+                uint32_t count = bindings[b].count *
+                                 (per_frame_descriptor ? g_descriptor_allocator.num_frames : 1);
                 bool found = false;
-                for (int i = 0; i < array_length(allocator->pool_sizes); i += 1) {
-                        if (allocator->pool_sizes[i].type == type) {
-                                allocator->pool_sizes[i].descriptorCount += count;
+                for (int i = 0; i < array_length(g_descriptor_allocator.pool_sizes); i += 1) {
+                        if (g_descriptor_allocator.pool_sizes[i].type == type) {
+                                g_descriptor_allocator.pool_sizes[i].descriptorCount += count;
                                 found = true;
                         }
                 }
@@ -109,34 +138,34 @@ void descriptor_allocator_reserve(DescriptorAllocator *allocator, DescriptorBind
                             .type = type,
                             .descriptorCount = count,
                         };
-                        array_append(allocator->pool_sizes, size);
+                        array_append(g_descriptor_allocator.pool_sizes, size);
                 }
         }
 }
 
-bool descriptor_allocator_create(VkDevice device, DescriptorAllocator *allocator) {
-        allocator->device = device;
+bool descriptor_allocator_create(VkDevice device) {
+        g_descriptor_allocator.device = device;
 
         uint32_t sum = 0;
-        for (uint32_t i = 0; i < array_length(allocator->pool_sizes); i += 1) {
-                sum += allocator->pool_sizes[i].descriptorCount;
+        for (uint32_t i = 0; i < array_length(g_descriptor_allocator.pool_sizes); i += 1) {
+                sum += g_descriptor_allocator.pool_sizes[i].descriptorCount;
         }
 
         VkDescriptorPoolCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .pPoolSizes = allocator->pool_sizes,
-            .poolSizeCount = array_length(allocator->pool_sizes),
+            .pPoolSizes = g_descriptor_allocator.pool_sizes,
+            .poolSizeCount = array_length(g_descriptor_allocator.pool_sizes),
             .maxSets = sum,
             .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT |
                      VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
         };
 
-        VK_EXPECT(vkCreateDescriptorPool(device, &create_info, NULL, &allocator->pool));
+        VK_EXPECT(vkCreateDescriptorPool(device, &create_info, NULL, &g_descriptor_allocator.pool));
 
         return true;
 }
 
-Descriptor descriptor_allocate(DescriptorAllocator *allocator, DescriptorLayout *layout) {
+Descriptor descriptor_allocate(DescriptorLayout *layout) {
         Descriptor r = {0};
         r.layout = layout;
 
@@ -155,15 +184,20 @@ Descriptor descriptor_allocate(DescriptorAllocator *allocator, DescriptorLayout 
 
         VkDescriptorSetAllocateInfo alloc_info = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = allocator->pool,
+            .descriptorPool = g_descriptor_allocator.pool,
             .pSetLayouts = &layout->layout,
             .descriptorSetCount = 1,
             .pNext = var_count ? &var_bindings : VK_NULL_HANDLE,
         };
 
-        vkAllocateDescriptorSets(allocator->device, &alloc_info, &r.descriptor);
+        vkAllocateDescriptorSets(g_descriptor_allocator.device, &alloc_info, &r.descriptor);
 
         return r;
+}
+
+void descriptor_free(Descriptor *descriptor) {
+        vkFreeDescriptorSets(vk_context_device(), g_descriptor_allocator.pool, 1,
+                             &descriptor->descriptor);
 }
 
 void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t binding,

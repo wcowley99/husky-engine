@@ -10,11 +10,16 @@ typedef struct {
         VmaAllocationInfo info;
 
         VmaAllocator allocator;
+
+        int mapped;
 } Buffer;
 
-bool buffer_create(VmaAllocator allocator, size_t size, VkBufferUsageFlags flags,
-                   VmaMemoryUsage usage, Buffer *buffer);
+bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
 void buffer_destroy(Buffer *buffer);
 
-void *buffer_mmap(Buffer *buffer, VmaAllocator allocator);
-void buffer_munmap(Buffer *buffer, VmaAllocator allocator);
+void *buffer_mmap(Buffer *buffer);
+void buffer_munmap(Buffer *buffer);
+
+void vk_memory_allocator_init();
+void vk_memory_allocator_shutdown();
+VmaAllocator vk_memory_allocator();

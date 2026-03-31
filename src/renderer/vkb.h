@@ -9,11 +9,15 @@
 
 #include <volk.h>
 
+#include <cglm/cglm.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 
 #define MAX_INSTANCES 100000
 #define MAX_TEXTURES 5000000
+
+#define NUM_FRAMES 3
 
 #define VK_EXPECT(x)                                                                               \
         do {                                                                                       \
@@ -24,3 +28,20 @@
                         exit(1);                                                                   \
                 }                                                                                  \
         } while (0)
+
+typedef struct {
+        mat4 view;
+        mat4 proj;
+        mat4 viewproj;
+
+        vec4 ambientColor;
+        vec4 sunlightDirection;
+        vec4 sunlightColor;
+} SceneData;
+
+typedef struct {
+        mat4 model;
+        VkDeviceAddress vertex_address;
+        int tex_index;
+        int padding;
+} Instance;
