@@ -1,4 +1,4 @@
-#include "device.h"
+#include "vk_context.h"
 
 #include "platform.h"
 #include "vkb.h"
@@ -6,6 +6,20 @@
 #include "husky.h"
 
 #include <SDL3/SDL_vulkan.h>
+
+typedef struct {
+        VkInstance instance;
+        VkSurfaceKHR surface;
+        VkDebugUtilsMessengerEXT debug_messenger;
+
+        VkPhysicalDevice physical_device;
+
+        VkDevice device;
+        uint32_t queue_family_index;
+        VkQueue graphics_queue;
+} vk_context_t;
+
+static vk_context_t g_context;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -16,7 +30,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
         return VK_FALSE;
 }
 
-bool create_instance(device_t *device) {
+bool create_instance() {
         const static char *APP_NAME = "Husky Engine";
 
         VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -61,14 +75,14 @@ bool create_instance(device_t *device) {
                                             .ppEnabledLayerNames = layers,
                                             .pNext = &validation_callback};
 
-        VK_EXPECT(vkCreateInstance(&create_info, NULL, &device->instance));
-        volkLoadInstance(device->instance);
+        VK_EXPECT(vkCreateInstance(&create_info, NULL, &g_context.instance));
+        volkLoadInstance(g_context.instance);
 
         free(extensions);
         return true;
 }
 
-bool create_debug_messenger(device_t *device) {
+bool create_debug_messenger() {
         VkDebugUtilsMessengerCreateInfoEXT create_info = {
             .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -80,12 +94,12 @@ bool create_debug_messenger(device_t *device) {
             .pfnUserCallback = validation_message_callback,
         };
 
-        VK_EXPECT(vkCreateDebugUtilsMessengerEXT(device->instance, &create_info, NULL,
-                                                 &device->debug_messenger));
+        VK_EXPECT(vkCreateDebugUtilsMessengerEXT(g_context.instance, &create_info, NULL,
+                                                 &g_context.debug_messenger));
         return true;
 }
 
-bool is_gpu_suitable(device_t *device, VkPhysicalDevice gpu) {
+bool is_gpu_suitable(VkPhysicalDevice gpu) {
         VkPhysicalDeviceProperties p;
         VkPhysicalDeviceVulkan12Features f12 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -115,10 +129,11 @@ bool is_gpu_suitable(device_t *device, VkPhysicalDevice gpu) {
 
         for (uint32_t i = 0; i < count; i += 1) {
                 VkBool32 support;
-                VK_EXPECT(vkGetPhysicalDeviceSurfaceSupportKHR(gpu, i, device->surface, &support));
+                VK_EXPECT(
+                    vkGetPhysicalDeviceSurfaceSupportKHR(gpu, i, g_context.surface, &support));
 
                 if (support && properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                        device->queue_family_index = i;
+                        g_context.queue_family_index = i;
                         printf("Selected Device: %s.\n", p.deviceName);
                 }
         }
@@ -127,9 +142,9 @@ bool is_gpu_suitable(device_t *device, VkPhysicalDevice gpu) {
         return true;
 }
 
-bool select_gpu(device_t *device) {
+bool select_gpu() {
         uint32_t count = 0;
-        vkEnumeratePhysicalDevices(device->instance, &count, NULL);
+        vkEnumeratePhysicalDevices(g_context.instance, &count, NULL);
 
         if (count == 0) {
                 printf("Failed to find GPUs with Vulkan support.\n");
@@ -137,11 +152,11 @@ bool select_gpu(device_t *device) {
         }
 
         VkPhysicalDevice *gpus = malloc(sizeof(VkPhysicalDevice *) * count);
-        vkEnumeratePhysicalDevices(device->instance, &count, gpus);
+        vkEnumeratePhysicalDevices(g_context.instance, &count, gpus);
 
         for (uint32_t i = 0; i < count; i += 1) {
-                if (is_gpu_suitable(device, gpus[i])) {
-                        device->physical_device = gpus[i];
+                if (is_gpu_suitable(gpus[i])) {
+                        g_context.physical_device = gpus[i];
                         break;
                 }
         }
@@ -150,11 +165,11 @@ bool select_gpu(device_t *device) {
         return true;
 }
 
-bool create_logical_device(device_t *device) {
+bool create_logical_device() {
         float priorities[] = {1.0f};
         VkDeviceQueueCreateInfo queue_info = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = device->queue_family_index,
+            .queueFamilyIndex = g_context.queue_family_index,
             .queueCount = 1,
             .pQueuePriorities = priorities,
         };
@@ -190,32 +205,38 @@ bool create_logical_device(device_t *device) {
             .pNext = &f,
         };
 
-        VK_EXPECT(vkCreateDevice(device->physical_device, &create_info, NULL, &device->device));
-        volkLoadDevice(device->device);
+        VK_EXPECT(vkCreateDevice(g_context.physical_device, &create_info, NULL, &g_context.device));
+        volkLoadDevice(g_context.device);
 
-        vkGetDeviceQueue(device->device, device->queue_family_index, 0, &device->graphics_queue);
+        vkGetDeviceQueue(g_context.device, g_context.queue_family_index, 0,
+                         &g_context.graphics_queue);
 
         return true;
 }
 
-device_t device_create() {
-        device_t device = {0};
+void vk_context_init() {
+        ASSERT(create_instance());
+        ASSERT(create_debug_messenger());
 
-        ASSERT(create_instance(&device));
-        ASSERT(create_debug_messenger(&device));
+        g_context.surface = platform_create_surface(g_context.instance);
 
-        device.surface = platform_create_surface(device.instance);
-
-        ASSERT(select_gpu(&device));
-        ASSERT(create_logical_device(&device));
-
-        return device;
+        ASSERT(select_gpu());
+        ASSERT(create_logical_device());
 }
 
-void device_shutdown(device_t *device) {
-        vkDestroyDevice(device->device, NULL);
+void vk_context_shutdown() {
+        vkDestroyDevice(g_context.device, NULL);
 
-        vkDestroySurfaceKHR(device->instance, device->surface, NULL);
-        vkDestroyDebugUtilsMessengerEXT(device->instance, device->debug_messenger, NULL);
-        vkDestroyInstance(device->instance, NULL);
+        vkDestroySurfaceKHR(g_context.instance, g_context.surface, NULL);
+        vkDestroyDebugUtilsMessengerEXT(g_context.instance, g_context.debug_messenger, NULL);
+        vkDestroyInstance(g_context.instance, NULL);
 }
+
+void vk_context_wait_idle() { vkDeviceWaitIdle(g_context.device); }
+
+VkInstance vk_context_instance() { return g_context.instance; }
+VkSurfaceKHR vk_context_surface() { return g_context.surface; }
+VkPhysicalDevice vk_context_physical_device() { return g_context.physical_device; }
+VkDevice vk_context_device() { return g_context.device; }
+uint32_t vk_context_queue_family_index() { return g_context.queue_family_index; }
+VkQueue vk_context_graphics_queue() { return g_context.graphics_queue; }

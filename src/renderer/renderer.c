@@ -1,7 +1,7 @@
 #include "renderer.h"
 
-#include "device.h"
 #include "platform.h"
+#include "vk_context.h"
 
 #include "buffer.h"
 #include "command.h"
@@ -20,8 +20,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-static device_t g_device;
 
 // Swapchain
 VkSwapchainKHR g_Swapchain;
@@ -90,7 +88,7 @@ uint32_t mesh_buffer_create(Mesh *mesh) {
             .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
             .buffer = buffer->vertex.buffer,
         };
-        buffer->vertex_address = vkGetBufferDeviceAddress(g_device.device, &address_info);
+        buffer->vertex_address = vkGetBufferDeviceAddress(vk_context_device(), &address_info);
 
         Buffer staging_buffer;
         buffer_create(g_Allocator, vertex_buffer_size + index_buffer_size,
@@ -128,9 +126,9 @@ bool frame_resources_create(FrameResources *f) {
         VkCommandPoolCreateInfo command_pool_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = g_device.queue_family_index,
+            .queueFamilyIndex = vk_context_queue_family_index(),
         };
-        VK_EXPECT(vkCreateCommandPool(g_device.device, &command_pool_info, NULL, &f->pool));
+        VK_EXPECT(vkCreateCommandPool(vk_context_device(), &command_pool_info, NULL, &f->pool));
 
         VkCommandBufferAllocateInfo alloc_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -138,21 +136,22 @@ bool frame_resources_create(FrameResources *f) {
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
         };
-        VK_EXPECT(vkAllocateCommandBuffers(g_device.device, &alloc_info, &f->command));
+        VK_EXPECT(vkAllocateCommandBuffers(vk_context_device(), &alloc_info, &f->command));
 
         VkFenceCreateInfo fence_info = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         };
-        VK_EXPECT(vkCreateFence(g_device.device, &fence_info, NULL, &f->render_fence));
+        VK_EXPECT(vkCreateFence(vk_context_device(), &fence_info, NULL, &f->render_fence));
 
         VkSemaphoreCreateInfo semaphore_info = {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .flags = 0,
         };
         VK_EXPECT(
-            vkCreateSemaphore(g_device.device, &semaphore_info, NULL, &f->swapchain_semaphore));
-        VK_EXPECT(vkCreateSemaphore(g_device.device, &semaphore_info, NULL, &f->render_semaphore));
+            vkCreateSemaphore(vk_context_device(), &semaphore_info, NULL, &f->swapchain_semaphore));
+        VK_EXPECT(
+            vkCreateSemaphore(vk_context_device(), &semaphore_info, NULL, &f->render_semaphore));
 
         ASSERT(buffer_create(g_Allocator, sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                              VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
@@ -170,16 +169,16 @@ bool frame_resources_create(FrameResources *f) {
 }
 
 void frame_resources_destroy(FrameResources *f) {
-        vkDestroySemaphore(g_device.device, f->swapchain_semaphore, NULL);
-        vkDestroySemaphore(g_device.device, f->render_semaphore, NULL);
+        vkDestroySemaphore(vk_context_device(), f->swapchain_semaphore, NULL);
+        vkDestroySemaphore(vk_context_device(), f->render_semaphore, NULL);
 
-        vkDestroyFence(g_device.device, f->render_fence, NULL);
+        vkDestroyFence(vk_context_device(), f->render_fence, NULL);
 
-        vkDestroyCommandPool(g_device.device, f->pool, NULL);
+        vkDestroyCommandPool(vk_context_device(), f->pool, NULL);
 
-        vkFreeDescriptorSets(g_device.device, g_DescriptorAllocator.pool, 1,
+        vkFreeDescriptorSets(vk_context_device(), g_DescriptorAllocator.pool, 1,
                              &f->global_descriptors.descriptor);
-        // vkFreeDescriptorSets(g_device.device, g_DescriptorAllocator.pool, 1,
+        // vkFreeDescriptorSets(vk_context_device(), g_DescriptorAllocator.pool, 1,
         // &f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
@@ -218,7 +217,7 @@ bool frame_resources_submit(FrameResources *f) {
             .pCommandBufferInfos = &command_info,
         };
 
-        VK_EXPECT(vkQueueSubmit2(g_device.graphics_queue, 1, &submit_info, f->render_fence));
+        VK_EXPECT(vkQueueSubmit2(vk_context_graphics_queue(), 1, &submit_info, f->render_fence));
         return true;
 }
 
@@ -227,15 +226,15 @@ bool frame_resources_submit(FrameResources *f) {
 ///////////////////////////////////////
 bool swapchain_create() {
         VkSurfaceCapabilitiesKHR capabilities;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_device.physical_device, g_device.surface,
-                                                  &capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_context_physical_device(),
+                                                  vk_context_surface(), &capabilities);
 
         VkExtent2D extent;
         platform_get_size(&extent.width, &extent.height);
 
         VkSwapchainCreateInfoKHR create_info = {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .surface = g_device.surface,
+            .surface = vk_context_surface(),
             .presentMode = VK_PRESENT_MODE_FIFO_KHR,
             .minImageCount = NUM_FRAMES,
             .imageFormat = g_SwapchainFormat,
@@ -250,12 +249,12 @@ bool swapchain_create() {
             .oldSwapchain = VK_NULL_HANDLE,
         };
 
-        VK_EXPECT(vkCreateSwapchainKHR(g_device.device, &create_info, NULL, &g_Swapchain));
+        VK_EXPECT(vkCreateSwapchainKHR(vk_context_device(), &create_info, NULL, &g_Swapchain));
 
-        vkGetSwapchainImagesKHR(g_device.device, g_Swapchain, &g_SwapchainImageCount, NULL);
+        vkGetSwapchainImagesKHR(vk_context_device(), g_Swapchain, &g_SwapchainImageCount, NULL);
 
         VkImage *images = malloc(sizeof(VkImage) * g_SwapchainImageCount);
-        vkGetSwapchainImagesKHR(g_device.device, g_Swapchain, &g_SwapchainImageCount, images);
+        vkGetSwapchainImagesKHR(vk_context_device(), g_Swapchain, &g_SwapchainImageCount, images);
 
         g_SwapchainImages = malloc(sizeof(Image) * g_SwapchainImageCount);
         g_SwapchainFrameResources = malloc(sizeof(FrameResources) * g_SwapchainImageCount);
@@ -264,7 +263,7 @@ bool swapchain_create() {
 
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
                 ImageCreateInfo create_info = {
-                    .device = g_device.device,
+                    .device = vk_context_device(),
                     .image = images[i],
                     .extent = image_extent,
                     .format = g_SwapchainFormat,
@@ -283,16 +282,16 @@ bool swapchain_create() {
 
 void swapchain_destroy() {
         for (uint32_t i = 0; i < g_SwapchainImageCount; i += 1) {
-                image_destroy(&g_SwapchainImages[i], g_device.device);
+                image_destroy(&g_SwapchainImages[i], vk_context_device());
                 frame_resources_destroy(&g_SwapchainFrameResources[i]);
         }
         free(g_SwapchainImages);
         free(g_SwapchainFrameResources);
-        vkDestroySwapchainKHR(g_device.device, g_Swapchain, NULL);
+        vkDestroySwapchainKHR(vk_context_device(), g_Swapchain, NULL);
 }
 
 void SwapchainRecreate() {
-        vkDeviceWaitIdle(g_device.device);
+        vkDeviceWaitIdle(vk_context_device());
 
         swapchain_destroy();
         swapchain_create();
@@ -303,9 +302,10 @@ bool swapchain_next_frame() {
         // todo : is it ok to expect on vkWaitForFences here? If function RV
         // represents whether or not to recreate swapchain, should you recreate if
         // fence fails (times out) or quit?
-        VK_EXPECT(vkWaitForFences(g_device.device, 1, &next->render_fence, VK_TRUE, 1000000000));
+        VK_EXPECT(
+            vkWaitForFences(vk_context_device(), 1, &next->render_fence, VK_TRUE, 1000000000));
 
-        VK_EXPECT(vkAcquireNextImageKHR(g_device.device, g_Swapchain, 1000000000,
+        VK_EXPECT(vkAcquireNextImageKHR(vk_context_device(), g_Swapchain, 1000000000,
                                         next->swapchain_semaphore, VK_NULL_HANDLE,
                                         &g_CurrentSwapchainImageIndex));
 
@@ -321,7 +321,7 @@ bool swapchain_next_frame() {
 ///////////////////////////////////////
 bool RendererInit(RendererCreateInfo *c) {
         platform_init(c->width, c->height, c->title);
-        g_device = device_create();
+        vk_context_init();
 
         ASSERT(create_vma_allocator());
 
@@ -339,7 +339,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
             .allocator = g_Allocator,
-            .device = g_device.device,
+            .device = vk_context_device(),
         };
 
         AllocatedImageCreateInfo depth_image_info = {
@@ -355,7 +355,7 @@ bool RendererInit(RendererCreateInfo *c) {
             .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
             .usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             .allocator = g_Allocator,
-            .device = g_device.device,
+            .device = vk_context_device(),
         };
 
         ASSERT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
@@ -367,8 +367,8 @@ bool RendererInit(RendererCreateInfo *c) {
 
         ASSERT(swapchain_create());
 
-        ASSERT(immediate_command_create(g_device.device, g_device.queue_family_index,
-                                        g_device.graphics_queue, &g_ImmediateCommand));
+        ASSERT(immediate_command_create(vk_context_device(), vk_context_queue_family_index(),
+                                        vk_context_graphics_queue(), &g_ImmediateCommand));
 
         size_t gradient_size;
         char *gradient_comp = ReadFile("shaders/gradient2.comp.spv", &gradient_size);
@@ -382,12 +382,12 @@ bool RendererInit(RendererCreateInfo *c) {
             .shader_source = (const uint32_t *)gradient_comp,
             .shader_source_size = gradient_size / 4,
         };
-        ASSERT(compute_pipeline_create(g_device.device, &pipeline_info, &g_GradientPipeline));
+        ASSERT(compute_pipeline_create(vk_context_device(), &pipeline_info, &g_GradientPipeline));
 
         free(gradient_comp);
 
         g_PbrPipeline =
-            create_pbr_pipeline(g_device.device, g_GlobalDescriptorLayout.layout,
+            create_pbr_pipeline(vk_context_device(), g_GlobalDescriptorLayout.layout,
                                 g_MaterialDescriptorLayout, g_IntermediateImage.image.format);
 
         g_MeshBuffers = array(MeshBuffer);
@@ -400,16 +400,16 @@ bool RendererInit(RendererCreateInfo *c) {
 
 void RendererShutdown() {
         // Make sure the GPU has finished all work
-        vkDeviceWaitIdle(g_device.device);
+        vk_context_wait_idle();
 
-        compute_pipeline_destroy(&g_GradientPipeline, g_device.device);
-        graphics_pipeline_destroy(&g_PbrPipeline, g_device.device);
+        compute_pipeline_destroy(&g_GradientPipeline, vk_context_device());
+        graphics_pipeline_destroy(&g_PbrPipeline, vk_context_device());
 
-        vkDestroySampler(g_device.device, g_LinearSampler, NULL);
-        vkDestroySampler(g_device.device, g_NearestSampler, NULL);
+        vkDestroySampler(vk_context_device(), g_LinearSampler, NULL);
+        vkDestroySampler(vk_context_device(), g_NearestSampler, NULL);
 
-        allocated_image_destroy(&g_IntermediateImage, g_device.device);
-        allocated_image_destroy(&g_DepthImage, g_device.device);
+        allocated_image_destroy(&g_IntermediateImage, vk_context_device());
+        allocated_image_destroy(&g_DepthImage, vk_context_device());
 
         for (int i = 0; i < array_length(g_MeshBuffers); i += 1) {
                 mesh_buffer_destroy(&g_MeshBuffers[i]);
@@ -417,7 +417,7 @@ void RendererShutdown() {
         array_free(g_MeshBuffers);
 
         for (int i = 0; i < array_length(g_Textures); i += 1) {
-                allocated_image_destroy(&g_Textures[i], g_device.device);
+                allocated_image_destroy(&g_Textures[i], vk_context_device());
         }
         array_free(g_Textures);
         array_free(g_RenderObjects);
@@ -428,11 +428,11 @@ void RendererShutdown() {
         descriptor_allocator_destroy(&g_DescriptorAllocator);
         descriptor_layout_destroy(&g_GlobalDescriptorLayout);
         descriptor_layout_destroy(&g_IntermediateImageDescriptorLayout);
-        // vkDestroyDescriptorSetLayout(g_device.device, g_MaterialDescriptorLayout, NULL);
+        // vkDestroyDescriptorSetLayout(vk_context_device(), g_MaterialDescriptorLayout, NULL);
 
         vmaDestroyAllocator(g_Allocator);
 
-        device_shutdown(&g_device);
+        vk_context_shutdown();
         platform_shutdown();
 }
 
@@ -567,7 +567,7 @@ bool DrawCommandBeginFrame() {
                 SwapchainRecreate();
         }
 
-        vkResetFences(g_device.device, 1, &g_CurrentFrameResources->render_fence);
+        vkResetFences(vk_context_device(), 1, &g_CurrentFrameResources->render_fence);
         begin_command_buffer(g_CurrentFrameResources->command);
 
         return true;
@@ -589,7 +589,7 @@ void DrawCommandEndFrame() {
             .pWaitSemaphores = &g_CurrentFrameResources->render_semaphore,
             .pImageIndices = &g_CurrentSwapchainImageIndex,
         };
-        VkResult result = vkQueuePresentKHR(g_device.graphics_queue, &present_info);
+        VkResult result = vkQueuePresentKHR(vk_context_graphics_queue(), &present_info);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
                 printf("out of date/suboptimal swapchain.\n");
@@ -608,7 +608,7 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
             .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
 
-            .device = g_device.device,
+            .device = vk_context_device(),
             .allocator = g_Allocator,
 
             .data = (uint32_t *)mats->diffuse_tex,
@@ -664,7 +664,7 @@ bool init_descriptors() {
 
         descriptor_allocator_reserve(&g_DescriptorAllocator, draw_image_bindings, 1, false);
         g_IntermediateImageDescriptorLayout =
-            descriptor_layout_create(g_device.device, draw_image_bindings, 1);
+            descriptor_layout_create(vk_context_device(), draw_image_bindings, 1);
 
         DescriptorBinding global_bindings[3] = {
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -680,9 +680,10 @@ bool init_descriptors() {
         };
 
         descriptor_allocator_reserve(&g_DescriptorAllocator, global_bindings, 3, true);
-        g_GlobalDescriptorLayout = descriptor_layout_create(g_device.device, global_bindings, 3);
+        g_GlobalDescriptorLayout =
+            descriptor_layout_create(vk_context_device(), global_bindings, 3);
 
-        ASSERT(descriptor_allocator_create(g_device.device, &g_DescriptorAllocator));
+        ASSERT(descriptor_allocator_create(vk_context_device(), &g_DescriptorAllocator));
         g_IntermediateImageDescriptors =
             descriptor_allocate(&g_DescriptorAllocator, &g_IntermediateImageDescriptorLayout);
 
@@ -698,9 +699,9 @@ bool create_vma_allocator() {
         };
 
         VmaAllocatorCreateInfo create_info = {
-            .physicalDevice = g_device.physical_device,
-            .instance = g_device.instance,
-            .device = g_device.device,
+            .physicalDevice = vk_context_physical_device(),
+            .instance = vk_context_instance(),
+            .device = vk_context_device(),
             .vulkanApiVersion = VK_API_VERSION_1_3,
             .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
             .pVulkanFunctions = &functions,
@@ -728,12 +729,12 @@ void create_samplers() {
         sampler_info.magFilter = VK_FILTER_LINEAR;
         sampler_info.minFilter = VK_FILTER_LINEAR;
 
-        vkCreateSampler(g_device.device, &sampler_info, NULL, &g_LinearSampler);
+        vkCreateSampler(vk_context_device(), &sampler_info, NULL, &g_LinearSampler);
 
         sampler_info.magFilter = VK_FILTER_NEAREST;
         sampler_info.minFilter = VK_FILTER_NEAREST;
 
-        vkCreateSampler(g_device.device, &sampler_info, NULL, &g_NearestSampler);
+        vkCreateSampler(vk_context_device(), &sampler_info, NULL, &g_NearestSampler);
 }
 
 DrawBatch draw_batch_create(RenderObject obj, uint32_t first_instance) {

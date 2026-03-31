@@ -1,4 +1,4 @@
-#include "renderer/renderer.h"
+#include "renderer/agpu.h"
 
 #include "scene/camera.h"
 #include "scene/scene.h"
