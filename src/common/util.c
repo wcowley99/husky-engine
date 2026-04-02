@@ -1,5 +1,7 @@
 #include "util.h"
 
+#include "husky.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -8,7 +10,7 @@ char *ReadFile(const char *filename, size_t *filesize) {
         FILE *f = fopen(filename, "rb");
 
         if (!f) {
-                printf("Failed to open file %s: %s\n", filename, strerror(errno));
+                ERROR("Failed to open file %s: %s", filename, strerror(errno));
                 return NULL;
         }
 
@@ -20,7 +22,7 @@ char *ReadFile(const char *filename, size_t *filesize) {
 
         if (!data) {
                 fclose(f);
-                printf("Failed to allocate %lu bytes for file contents.\n", *filesize + 1);
+                ERROR("Failed to allocate %lu bytes for file contents.", *filesize + 1);
                 return NULL;
         }
 

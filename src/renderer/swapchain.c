@@ -63,10 +63,10 @@ void frame_resources_init(frame_t *f) {
         VK_EXPECT(
             vkCreateSemaphore(vk_context_device(), &semaphore_info, NULL, &f->render_semaphore));
 
-        ASSERT(buffer_create(sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                             VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform));
-        ASSERT(buffer_create(sizeof(Instance) * MAX_INSTANCES, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, &f->instance_buffer));
+        buffer_create(sizeof(SceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                      VMA_MEMORY_USAGE_CPU_TO_GPU, &f->camera_uniform);
+        buffer_create(sizeof(Instance) * MAX_INSTANCES, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, &f->instance_buffer);
 
         f->global_descriptors = descriptor_allocate(global_descriptor_layout());
 
@@ -83,7 +83,6 @@ void frame_resources_destroy(frame_t *f) {
         vkDestroyCommandPool(vk_context_device(), f->pool, NULL);
 
         descriptor_free(&f->global_descriptors);
-        // descriptor_free(&f->mat_descriptors);
 
         buffer_destroy(&f->camera_uniform);
         buffer_destroy(&f->instance_buffer);
@@ -239,7 +238,7 @@ void swapchain_current_frame_submit() {
         VkResult result = vkQueuePresentKHR(vk_context_graphics_queue(), &present_info);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-                printf("out of date/suboptimal swapchain.\n");
+                DEBUG("out of date/suboptimal swapchain.");
                 SwapchainRecreate();
         }
 }
@@ -265,6 +264,9 @@ void *swapchain_current_frame_get_buffer(frame_buffer_type_t buffer_type) {
                 return buffer_mmap(&current_frame->camera_uniform);
         case FRAME_BUFFER_INSTANCES:
                 return buffer_mmap(&current_frame->instance_buffer);
+        default:
+                DEBUG("error: unknown buffer type %d", buffer_type);
+                exit(1);
         }
 
         return NULL;

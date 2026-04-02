@@ -113,8 +113,8 @@ void world_init() {
                    EcsPostUpdate, [in] position_t, [in] scale_t, [in] model_component_t);
 
         ecs_entity_t player = ecs_new(ecs);
-        ecs_set(ecs, player, position_t, {0.0f, 0.0f, 2.0f});
-        ecs_set(ecs, player, camera_target_t, {0.0f, 0.0f, -1.0f});
+        ecs_set(ecs, player, position_t, {0.0f, 0.0f, 0.0f});
+        ecs_set(ecs, player, camera_target_t, {1.0f, 0.0f, 0.0f});
 
         ecs_entity_t sponza = ecs_new(ecs);
         ecs_set(ecs, sponza, position_t, {0.0f, 0.0f, 0.0f});

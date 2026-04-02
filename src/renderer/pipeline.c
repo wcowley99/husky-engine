@@ -1,15 +1,11 @@
 #include "pipeline.h"
 
-#include "common/util.h"
-
-#include "descriptors.h"
-
 #include "husky.h"
 
 #include <stdlib.h>
 
-bool create_shader_module(VkDevice device, const uint32_t *bytes, size_t len,
-                          VkShaderModule *module) {
+static void create_shader_module(VkDevice device, const uint32_t *bytes, size_t len,
+                                 VkShaderModule *module) {
         VkShaderModuleCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .pCode = bytes,
@@ -17,7 +13,6 @@ bool create_shader_module(VkDevice device, const uint32_t *bytes, size_t len,
         };
 
         VK_EXPECT(vkCreateShaderModule(device, &create_info, NULL, module));
-        return true;
 }
 
 bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
@@ -96,10 +91,10 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
 
         VkShaderModule vertex;
         VkShaderModule fragment;
-        ASSERT(create_shader_module(device, create_info->vertex_shader,
-                                    create_info->vertex_shader_size, &vertex));
-        ASSERT(create_shader_module(device, create_info->fragment_shader,
-                                    create_info->fragment_shader_size, &fragment));
+        create_shader_module(device, create_info->vertex_shader, create_info->vertex_shader_size,
+                             &vertex);
+        create_shader_module(device, create_info->fragment_shader,
+                             create_info->fragment_shader_size, &fragment);
 
         VkPipelineShaderStageCreateInfo shaders[] = {
             {
@@ -124,7 +119,7 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
             .pushConstantRangeCount = create_info->num_push_constants,
         };
 
-        printf("graphics descriptor: %p\n", *create_info->descriptors);
+        DEBUG("graphics descriptor: %p", *create_info->descriptors);
         VK_EXPECT(vkCreatePipelineLayout(device, &layout_info, NULL, &pipeline->layout));
 
         VkGraphicsPipelineCreateInfo pipeline_info = {
@@ -152,48 +147,6 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
         return true;
 }
 
-GraphicsPipeline create_pbr_pipeline(VkDevice device, VkFormat format) {
-        GraphicsPipeline r = {};
-
-        VkPushConstantRange push_constants[] = {
-            {
-                .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-                .offset = 0,
-                .size = 72,
-            },
-        };
-
-        size_t vert_size, frag_size;
-        char *vert = ReadFile("shaders/mesh.vert.spv", &vert_size);
-        char *frag = ReadFile("shaders/mesh.frag.spv", &frag_size);
-
-        VkDescriptorSetLayout layouts[] = {global_descriptor_layout()->layout};
-        GraphicsPipelineCreateInfo mesh_pipeline_info = {
-            .descriptors = layouts,
-            .num_descriptors = 1,
-            .push_constants = push_constants,
-            .num_push_constants = 1,
-            .vertex_shader = (const uint32_t *)vert,
-            .vertex_shader_size = vert_size / 4,
-            .fragment_shader = (const uint32_t *)frag,
-            .fragment_shader_size = frag_size / 4,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-            .polygon_mode = VK_POLYGON_MODE_FILL,
-            .cull_mode = VK_CULL_MODE_BACK_BIT,
-            .front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            .color_attachment_format = format,
-            .depth_attachment_format = VK_FORMAT_D32_SFLOAT,
-            .depth_testing = true,
-            .depth_compare_op = VK_COMPARE_OP_LESS,
-        };
-        graphics_pipeline_create(device, &mesh_pipeline_info, &r);
-
-        free(vert);
-        free(frag);
-
-        return r;
-}
-
 void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device) {
         vkDestroyPipelineLayout(device, pipeline->layout, NULL);
         vkDestroyPipeline(device, pipeline->pipeline, NULL);
@@ -213,7 +166,7 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
                 ranges[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         }
 
-        printf("compute descriptor: %p\n", *info->descriptors);
+        DEBUG("compute descriptor: %p", *info->descriptors);
         VkPipelineLayoutCreateInfo layout_create_info = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .pSetLayouts = info->descriptors,
@@ -227,8 +180,7 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
         VK_EXPECT(result);
 
         VkShaderModule compute;
-        ASSERT(
-            create_shader_module(device, info->shader_source, info->shader_source_size, &compute));
+        create_shader_module(device, info->shader_source, info->shader_source_size, &compute);
 
         VkComputePipelineCreateInfo pipeline_info = {
             .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,

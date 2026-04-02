@@ -3,6 +3,8 @@
 #include "common/array.h"
 #include "common/str.h"
 
+#include "common/log.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -35,7 +37,7 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
         my_mesh.vertices = array(Vertex);
         my_mesh.indices = array(uint32_t);
 
-        printf("mesh->mNumVertices = %d\n", mesh->mNumVertices);
+        DEBUG("mesh->mNumVertices = %d", mesh->mNumVertices);
 
         for (int i = 0; i < mesh->mNumVertices; i++) {
                 Vertex v;
@@ -74,7 +76,7 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
         }
 
         if (mesh->mMaterialIndex >= 0) {
-                printf("mesh material = %d\n", mesh->mMaterialIndex);
+                DEBUG("mesh material = %d", mesh->mMaterialIndex);
                 my_mesh.material_index = mesh->mMaterialIndex;
         }
 
@@ -82,8 +84,8 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
 }
 
 void process_node(const struct aiNode *node, const struct aiScene *scene, Model *model) {
-        printf("node->mNumMeshes = %d, node->mNumChildren = %d\n", node->mNumMeshes,
-               node->mNumChildren);
+        DEBUG("node->mNumMeshes = %d, node->mNumChildren = %d", node->mNumMeshes,
+              node->mNumChildren);
         for (int i = 0; i < node->mNumMeshes; i++) {
                 struct aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
                 process_mesh(mesh, scene, model);
@@ -105,8 +107,7 @@ void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
         info.specular[1] = 0.5f;
         info.specular[2] = 0.5f;
 
-        printf("diffuse texture count: %d\n",
-               aiGetMaterialTextureCount(mat, aiTextureType_DIFFUSE));
+        DEBUG("diffuse texture count: %d", aiGetMaterialTextureCount(mat, aiTextureType_DIFFUSE));
 
         int num_diffuse = aiGetMaterialTextureCount(mat, aiTextureType_DIFFUSE);
         if (num_diffuse == 1) {
@@ -119,24 +120,24 @@ void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
                 tex_path[dir.len] = '/';
                 memcpy(tex_path + dir.len + 1, path.data, path.length);
                 tex_path[dir.len + path.length + 1] = '\0';
-                printf("tex_path = %s\n", tex_path);
+                DEBUG("tex_path = %s", tex_path);
 
                 int x, y, num_channels;
                 stbi_set_flip_vertically_on_load(1);
                 info.diffuse_tex = (char *)stbi_load(tex_path, &x, &y, &num_channels, 4);
 
                 if (info.diffuse_tex == NULL) {
-                        printf("failed to load image: %s\n", stbi_failure_reason());
+                        DEBUG("failed to load image: %s", stbi_failure_reason());
                 }
 
-                printf("loaded image: (%d, %d)\n", x, y);
+                DEBUG("loaded image: (%d, %d)", x, y);
 
                 info.diffuse_width = (size_t)x;
                 info.diffuse_height = (size_t)y;
 
                 free(tex_path);
         } else {
-                printf("Material Diffuse count: %d\n", num_diffuse);
+                DEBUG("Material Diffuse count: %d", num_diffuse);
 
                 info.diffuse_tex = NULL;
         }
@@ -156,7 +157,7 @@ Model load_model(char *filename) {
         model.materials = array(MaterialInfo);
 
         if (scene == NULL) {
-                printf("scene failed to load!\n");
+                DEBUG("scene failed to load!");
         }
         process_node(scene->mRootNode, scene, &model);
 

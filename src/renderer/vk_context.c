@@ -25,7 +25,17 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
-        printf("[Validation]: %s\n", pCallbackData->pMessage);
+        switch (messageSeverity) {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+                INFO("Validation Error: %s", pCallbackData->pMessage);
+                break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+                ERROR("Validation Error: %s", pCallbackData->pMessage);
+                break;
+        default:
+                DEBUG("[Validation]: %s\n", pCallbackData->pMessage);
+                break;
+        }
 
         return VK_FALSE;
 }

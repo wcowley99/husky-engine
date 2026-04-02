@@ -14,7 +14,7 @@ typedef struct {
         int mapped;
 } Buffer;
 
-bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
+void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
 void buffer_destroy(Buffer *buffer);
 
 void *buffer_mmap(Buffer *buffer);

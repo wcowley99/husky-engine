@@ -2,6 +2,8 @@
 
 #include "vkb.h"
 
+#include "husky.h"
+
 #include <SDL3/SDL_vulkan.h>
 
 typedef struct {
@@ -16,7 +18,7 @@ void platform_init(uint32_t width, uint32_t height, const char *title) {
         VK_EXPECT(volkInitialize());
 
         if (!SDL_Init(SDL_INIT_VIDEO)) {
-                printf("Failed to initialize SDL: %s\n", SDL_GetError());
+                ERROR("Failed to initialize SDL: %s\n", SDL_GetError());
                 exit(1);
         }
 
@@ -24,14 +26,12 @@ void platform_init(uint32_t width, uint32_t height, const char *title) {
             SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
 
         if (!g_platform.window) {
-                printf("Failed to create Window: %s\n", SDL_GetError());
+                ERROR("Failed to create Window: %s", SDL_GetError());
                 exit(1);
         }
 
         int w, h;
         SDL_GetWindowSize(g_platform.window, &w, &h);
-
-        printf("w: %d, h: %d\n", w, h);
 
         g_platform.width = w;
         g_platform.height = h;
@@ -45,7 +45,7 @@ void platform_shutdown(void) {
 VkSurfaceKHR platform_create_surface(VkInstance instance) {
         VkSurfaceKHR surface;
         if (!SDL_Vulkan_CreateSurface(g_platform.window, instance, NULL, &surface)) {
-                printf("SDL failed to create window: %s.\n", SDL_GetError());
+                ERROR("SDL failed to create window: %s.", SDL_GetError());
                 exit(1);
         }
 

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <stdio.h>
+#include "common/log.h"
 
 #define ASSERT(x)                                                                                  \
         do {                                                                                       \
                 if (!(x)) {                                                                        \
-                        printf("[%s:%d] ASSERT failed: %s\n", __FILE__, __LINE__, #x);             \
+                        ERROR("ASSERT failed: %s", #x);                                            \
                         exit(1);                                                                   \
                 }                                                                                  \
         } while (0)

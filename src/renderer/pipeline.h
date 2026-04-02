@@ -4,9 +4,6 @@
 
 #include <stdbool.h>
 
-bool create_shader_module(VkDevice device, const uint32_t *bytes, size_t size,
-                          VkShaderModule *module);
-
 ///////////////////////////////////////
 /// Graphics Pipeline
 ///////////////////////////////////////

@@ -32,7 +32,7 @@ void vk_memory_allocator_shutdown() { vmaDestroyAllocator(g_allocator); }
 
 VmaAllocator vk_memory_allocator() { return g_allocator; }
 
-bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
+void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
         buffer->allocator = g_allocator;
         VkBufferCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -46,15 +46,8 @@ bool buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, 
                      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
         };
 
-        VkResult result = vmaCreateBuffer(g_allocator, &create_info, &alloc_info, &buffer->buffer,
-                                          &buffer->allocation, &buffer->info);
-
-        if (result != VK_SUCCESS) {
-                printf("Failed to create buffer.\n");
-                return false;
-        } else {
-                return true;
-        }
+        VK_EXPECT(vmaCreateBuffer(g_allocator, &create_info, &alloc_info, &buffer->buffer,
+                                  &buffer->allocation, &buffer->info));
 
         buffer->mapped = 0;
 }
@@ -64,6 +57,7 @@ void buffer_destroy(Buffer *buffer) {
 }
 
 void *buffer_mmap(Buffer *buffer) {
+        ASSERT(!buffer->mapped);
         buffer->mapped = 1;
 
         void *ssbo;
@@ -74,6 +68,7 @@ void *buffer_mmap(Buffer *buffer) {
 
 void buffer_munmap(Buffer *buffer) {
         ASSERT(buffer->mapped);
+        buffer->mapped = 0;
 
         vmaFlushAllocation(g_allocator, buffer->allocation, 0, VK_WHOLE_SIZE);
         vmaUnmapMemory(g_allocator, buffer->allocation);

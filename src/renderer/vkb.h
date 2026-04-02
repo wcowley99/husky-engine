@@ -1,5 +1,7 @@
 #pragma once
 
+#include "husky.h"
+
 #define VK_NO_PROTOTYPES
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
@@ -11,9 +13,6 @@
 
 #include <cglm/cglm.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-
 #define MAX_INSTANCES 100000
 #define MAX_TEXTURES 5000000
 
@@ -23,8 +22,7 @@
         do {                                                                                       \
                 VkResult err = x;                                                                  \
                 if (err != VK_SUCCESS) {                                                           \
-                        printf("[%s:%d] VK_EXPECT failed: %s\n", __FILE__, __LINE__,               \
-                               string_VkResult(err));                                              \
+                        ERROR("VK_EXPECT failed: %s", string_VkResult(err));                       \
                         exit(1);                                                                   \
                 }                                                                                  \
         } while (0)

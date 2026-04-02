@@ -232,8 +232,7 @@ GpuModel agpu_load_model(char *filename) {
         GpuModel r;
         r.meshes = array(GpuMesh);
 
-        printf("#meshes = %zu, #materials = %zu\n", array_length(m.meshes),
-               array_length(m.materials));
+        DEBUG("#meshes = %zu, #materials = %zu", array_length(m.meshes), array_length(m.materials));
 
         for (int i = 0; i < array_length(m.meshes); i++) {
                 Mesh *cpu_mesh = &m.meshes[i];
