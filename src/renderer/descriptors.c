@@ -78,6 +78,8 @@ DescriptorLayout descriptor_layout_create(VkDevice device, DescriptorBinding *bi
 }
 
 void descriptor_layout_destroy(DescriptorLayout *layout) {
+        // FIXME: why does vkDestroyDescriptorSetLayout(...) cause a segmentation fault when the
+        // window has been moved to a new workspace (Arch Linux)?
         vkDestroyDescriptorSetLayout(layout->device, layout->layout, NULL);
         array_free(layout->binding_types);
         array_free(layout->binding_counts);
