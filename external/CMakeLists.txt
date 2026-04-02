@@ -7,6 +7,7 @@ project(
 add_subdirectory(volk)
 add_subdirectory(cglm)
 add_subdirectory(assimp)
+add_subdirectory(flecs)
 
 add_library(external 
   VulkanMemoryAllocator/src/VmaUsage.cpp
@@ -16,9 +17,10 @@ target_include_directories(external PRIVATE
   VulkanMemoryAllocator/include
 )
 
-target_link_libraries(external PRIVATE 
+target_link_libraries(external PUBLIC 
   Vulkan::Headers
   assimp
+  flecs::flecs_static
 )
 
 target_compile_definitions(external PUBLIC 

@@ -4,6 +4,10 @@
 
 #include "husky.h"
 
+typedef struct gpu_buffers {
+
+} gpu_buffers_t;
+
 static VmaAllocator g_allocator;
 
 void vk_memory_allocator_init() {

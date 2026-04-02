@@ -50,13 +50,15 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
                 v.uv_x = mesh->mTextureCoords[0][i].x;
                 v.uv_y = mesh->mTextureCoords[0][i].y;
 
-                // v.color[0] = mesh->mColors[0][i].r;
-                // v.color[1] = mesh->mColors[0][i].g;
-                // v.color[2] = mesh->mColors[0][i].b;
-                // v.color[3] = mesh->mColors[0][i].a;
-
-                for (int x = 0; x < 4; x++)
-                        v.color[x] = 1.0f;
+                if (mesh->mColors[0]) {
+                        v.color[0] = mesh->mColors[0][i].r;
+                        v.color[1] = mesh->mColors[0][i].g;
+                        v.color[2] = mesh->mColors[0][i].b;
+                        v.color[3] = mesh->mColors[0][i].a;
+                } else {
+                        for (int i = 0; i < 4; i++)
+                                v.color[i] = 1.0f;
+                }
 
                 array_append(my_mesh.vertices, v);
         }

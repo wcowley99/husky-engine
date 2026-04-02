@@ -152,8 +152,7 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
         return true;
 }
 
-GraphicsPipeline create_pbr_pipeline(VkDevice device, VkDescriptorSetLayout global,
-                                     VkDescriptorSetLayout material, VkFormat format) {
+GraphicsPipeline create_pbr_pipeline(VkDevice device, VkFormat format) {
         GraphicsPipeline r = {};
 
         VkPushConstantRange push_constants[] = {

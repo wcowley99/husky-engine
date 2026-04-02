@@ -43,8 +43,7 @@ typedef struct {
 bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
                               GraphicsPipeline *pipeline);
 
-GraphicsPipeline create_pbr_pipeline(VkDevice device, VkDescriptorSetLayout global,
-                                     VkDescriptorSetLayout material, VkFormat format);
+GraphicsPipeline create_pbr_pipeline(VkDevice device, VkFormat format);
 
 void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device);
 

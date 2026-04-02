@@ -23,17 +23,23 @@ add_library(engine-lib
   src/renderer/image.c
   src/renderer/pipeline.c
   src/renderer/platform.c
+  src/renderer/render_graph.c
   src/renderer/renderer.c
   src/renderer/swapchain.c
   src/renderer/vk_context.c
   src/renderer/vkb.c
+
+  src/renderer/passes/pbr.c
+  src/renderer/passes/gradient.c
+  src/renderer/passes/present.c
 
   src/common/array.c
   src/common/str.c
   src/common/util.c
 
   src/scene/camera.c
-  src/scene/scene.c
+
+  src/world/world.c
 )
 
 target_link_libraries(engine-lib PUBLIC
@@ -52,6 +58,7 @@ target_include_directories(engine-lib PUBLIC
   external/cgltf
   external/cglm/include
   external/assimp/include
+  external/flecs/include
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/external/assimp/include
 
@@ -61,4 +68,4 @@ target_include_directories(engine-lib PUBLIC
 
 # Build main
 add_executable(civ-game src/main.c)
-target_link_libraries(civ-game engine-lib)
+target_link_libraries(civ-game engine-lib flecs::flecs_static)

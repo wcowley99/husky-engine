@@ -1,6 +1,8 @@
 #include "renderer.h"
 
+#include "passes/passes.h"
 #include "platform.h"
+#include "render_graph.h"
 #include "swapchain.h"
 #include "vk_context.h"
 
@@ -27,13 +29,8 @@ ImmediateCommand g_ImmediateCommand;
 DescriptorLayout g_GlobalDescriptorLayout;
 VkDescriptorSetLayout g_MaterialDescriptorLayout;
 
-AllocatedImage g_IntermediateImage;
-AllocatedImage g_DepthImage;
 DescriptorLayout g_IntermediateImageDescriptorLayout;
 Descriptor g_IntermediateImageDescriptors;
-
-ComputePipeline g_GradientPipeline;
-GraphicsPipeline g_PbrPipeline;
 
 GraphicsPipeline *g_ActiveGraphicsPipeline;
 
@@ -46,6 +43,8 @@ Material g_DefaultMaterial;
 
 VkSampler g_LinearSampler;
 VkSampler g_NearestSampler;
+
+render_graph_t g_render_graph;
 
 uint32_t mesh_buffer_create(Mesh *mesh) {
         const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
@@ -107,42 +106,6 @@ bool RendererInit(RendererCreateInfo *c) {
 
         vk_memory_allocator_init();
 
-        AllocatedImageCreateInfo allocated_image_info = {
-            .extent =
-                {
-                    .width = c->width,
-                    .height = c->height,
-                    .depth = 1,
-                },
-            .format = VK_FORMAT_R16G16B16A16_SFLOAT,
-            .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
-            .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
-            .usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
-            .allocator = vk_memory_allocator(),
-            .device = vk_context_device(),
-        };
-
-        AllocatedImageCreateInfo depth_image_info = {
-            .extent =
-                {
-                    .width = c->width,
-                    .height = c->height,
-                    .depth = 1,
-                },
-            .format = VK_FORMAT_D32_SFLOAT,
-            .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
-            .aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-            .allocator = vk_memory_allocator(),
-            .device = vk_context_device(),
-        };
-
-        ASSERT(allocated_image_create(&allocated_image_info, &g_IntermediateImage));
-        ASSERT(allocated_image_create(&depth_image_info, &g_DepthImage));
-
         create_samplers();
 
         ASSERT(init_descriptors());
@@ -152,25 +115,19 @@ bool RendererInit(RendererCreateInfo *c) {
         ASSERT(immediate_command_create(vk_context_device(), vk_context_queue_family_index(),
                                         vk_context_graphics_queue(), &g_ImmediateCommand));
 
-        size_t gradient_size;
-        char *gradient_comp = ReadFile("shaders/gradient2.comp.spv", &gradient_size);
+        attachment_handle_t hdr = render_graph_add_attachment(
+            &g_render_graph, (VkExtent3D){c->width, c->height, 1}, VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
-        uint32_t sizes[] = {sizeof(float) * 16};
-        ComputePipelineInfo pipeline_info = {
-            .descriptors = &g_IntermediateImageDescriptorLayout.layout,
-            .num_descriptors = 1,
-            .push_constant_sizes = sizes,
-            .num_push_constant_sizes = 1,
-            .shader_source = (const uint32_t *)gradient_comp,
-            .shader_source_size = gradient_size / 4,
-        };
-        ASSERT(compute_pipeline_create(vk_context_device(), &pipeline_info, &g_GradientPipeline));
+        attachment_handle_t depth = render_graph_add_attachment(
+            &g_render_graph, (VkExtent3D){c->width, c->height, 1}, VK_FORMAT_D32_SFLOAT,
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
-        free(gradient_comp);
-
-        g_PbrPipeline =
-            create_pbr_pipeline(vk_context_device(), g_GlobalDescriptorLayout.layout,
-                                g_MaterialDescriptorLayout, g_IntermediateImage.image.format);
+        gradient_pass_register(&g_render_graph, hdr);
+        pbr_pass_register(&g_render_graph, hdr, depth);
+        present_pass_register(&g_render_graph, hdr);
 
         g_MeshBuffers = array(MeshBuffer);
         g_Textures = array(AllocatedImage);
@@ -184,14 +141,8 @@ void RendererShutdown() {
         // Make sure the GPU has finished all work
         vk_context_wait_idle();
 
-        compute_pipeline_destroy(&g_GradientPipeline, vk_context_device());
-        graphics_pipeline_destroy(&g_PbrPipeline, vk_context_device());
-
         vkDestroySampler(vk_context_device(), g_LinearSampler, NULL);
         vkDestroySampler(vk_context_device(), g_NearestSampler, NULL);
-
-        allocated_image_destroy(&g_IntermediateImage, vk_context_device());
-        allocated_image_destroy(&g_DepthImage, vk_context_device());
 
         for (int i = 0; i < array_length(g_MeshBuffers); i += 1) {
                 mesh_buffer_destroy(&g_MeshBuffers[i]);
@@ -212,128 +163,24 @@ void RendererShutdown() {
         descriptor_layout_destroy(&g_IntermediateImageDescriptorLayout);
         // vkDestroyDescriptorSetLayout(vk_context_device(), g_MaterialDescriptorLayout, NULL);
 
+        gradient_pass_cleanup();
+        pbr_pass_cleanup();
+        render_graph_destroy(&g_render_graph);
+
         vk_memory_allocator_shutdown();
 
         vk_context_shutdown();
         platform_shutdown();
 }
 
-void DrawCommandClear(Image *image, VkClearColorValue color) {
-        image_transition(image, swapchain_current_frame_command_buffer(), VK_IMAGE_LAYOUT_GENERAL);
-        VkImageSubresourceRange range = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = VK_REMAINING_MIP_LEVELS,
-            .baseArrayLayer = 0,
-            .layerCount = VK_REMAINING_ARRAY_LAYERS,
-        };
-        vkCmdClearColorImage(swapchain_current_frame_command_buffer(), image->image, image->layout,
-                             &color, 1, &range);
-}
-
-void DrawCommandBindCompute(ComputePipeline *compute) {
-        vkCmdBindPipeline(swapchain_current_frame_command_buffer(), VK_PIPELINE_BIND_POINT_COMPUTE,
-                          compute->pipeline);
-}
-
-void DrawCommandSetComputePushConstants(ComputePipeline *compute, size_t offset, size_t size,
-                                        void *data) {
-        vkCmdPushConstants(swapchain_current_frame_command_buffer(), g_GradientPipeline.layout,
-                           VK_SHADER_STAGE_COMPUTE_BIT, offset, size, data);
-}
-
-void DrawCommandBindComputeDescriptor(ComputePipeline *compute, VkDescriptorSet descriptor,
-                                      uint32_t location) {
-        vkCmdBindDescriptorSets(swapchain_current_frame_command_buffer(),
-                                VK_PIPELINE_BIND_POINT_COMPUTE, compute->layout, location, 1,
-                                &descriptor, 0, NULL);
-}
-
-void DrawCommandExecuteCompute(Image *image) {
-        vkCmdDispatch(swapchain_current_frame_command_buffer(), ceilf(image->extent.width / 16.0f),
-                      ceilf(image->extent.height / 16.0f), 1);
-}
-
-void DrawCommandBeginRendering(Image *image) {
-        VkRenderingAttachmentInfo color_attachment = {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = image->image_view,
-            .imageLayout = image->layout,
-        };
-        VkRenderingAttachmentInfo depth_attachment = {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = g_DepthImage.image.image_view,
-            .imageLayout = g_DepthImage.image.layout,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue.depthStencil.depth = 1.0f,
-        };
-        VkRect2D scissor = {
-            {0, 0},
-            {.width = image->extent.width, .height = image->extent.height},
-        };
-        VkRenderingInfo render_info = {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea = scissor,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &color_attachment,
-            .pDepthAttachment = &depth_attachment,
-            .layerCount = 1,
-        };
-
-        vkCmdBeginRendering(swapchain_current_frame_command_buffer(), &render_info);
-
-        VkViewport viewport = {
-            .x = 0,
-            .y = 0,
-            .width = image->extent.width,
-            .height = image->extent.height,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-        };
-        vkCmdSetViewport(swapchain_current_frame_command_buffer(), 0, 1, &viewport);
-        vkCmdSetScissor(swapchain_current_frame_command_buffer(), 0, 1, &scissor);
-}
-
-void DrawCommandBindGraphicsPipeline(GraphicsPipeline *graphics) {
-        vkCmdBindPipeline(swapchain_current_frame_command_buffer(), VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          graphics->pipeline);
-        g_ActiveGraphicsPipeline = graphics;
-}
-
 void DrawCommandSetSceneData(SceneData *camera) {
-        if (!g_ActiveGraphicsPipeline) {
-                printf("No currently bound graphics pipeline!");
-                exit(1);
-        }
-
         SceneData *scene_data = swapchain_current_frame_get_buffer(FRAME_BUFFER_CAMERA);
         *scene_data = *camera;
-
-        vkCmdBindDescriptorSets(swapchain_current_frame_command_buffer(),
-                                VK_PIPELINE_BIND_POINT_GRAPHICS, g_ActiveGraphicsPipeline->layout,
-                                0, 1, &swapchain_current_frame_global_descriptor()->descriptor, 0,
-                                NULL);
-}
-
-void DrawCommandSetGraphicsPushConstants(size_t offset, size_t size, void *data) {
-        vkCmdPushConstants(swapchain_current_frame_command_buffer(),
-                           g_ActiveGraphicsPipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, offset,
-                           size, data);
 }
 
 void DrawCommandBindIndexBuffer(const MeshBuffer *mesh) {
         vkCmdBindIndexBuffer(swapchain_current_frame_command_buffer(), mesh->index.buffer, 0,
                              VK_INDEX_TYPE_UINT32);
-}
-
-void DrawCommandCopyToSwapchain(Image *image) {
-        image_transition(image, swapchain_current_frame_command_buffer(),
-                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        image_transition(swapchain_current_image(), swapchain_current_frame_command_buffer(),
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-        image_blit(swapchain_current_frame_command_buffer(), image, swapchain_current_image());
 }
 
 bool DrawCommandBeginFrame() {
@@ -365,9 +212,6 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
             .usage_flags = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             .memory_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             .memory_usage = VMA_MEMORY_USAGE_GPU_ONLY,
-
-            .device = vk_context_device(),
-            .allocator = vk_memory_allocator(),
 
             .data = (uint32_t *)mats->diffuse_tex,
             .imm = &g_ImmediateCommand,
@@ -411,22 +255,9 @@ GpuModel agpu_load_model(char *filename) {
 bool init_descriptors() {
         descriptor_allocator_init(NUM_FRAMES);
 
-        DescriptorBinding draw_image_bindings[1] = {
-            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-             .count = 1,
-             .stage = VK_SHADER_STAGE_COMPUTE_BIT},
-        };
-
-        descriptor_allocator_reserve(draw_image_bindings, 1, false);
-        g_IntermediateImageDescriptorLayout =
-            descriptor_layout_create(vk_context_device(), draw_image_bindings, 1);
-
         global_descriptor_layout_init();
 
         ASSERT(descriptor_allocator_create(vk_context_device()));
-        g_IntermediateImageDescriptors = descriptor_allocate(&g_IntermediateImageDescriptorLayout);
-
-        descriptor_write_image(g_IntermediateImageDescriptors, &g_IntermediateImage.image, 0, 0);
 
         return true;
 }
@@ -481,72 +312,17 @@ void agpu_begin_frame() {
         if (!DrawCommandBeginFrame()) {
                 return;
         }
-        DrawCommandClear(&g_IntermediateImage.image, (VkClearColorValue){0.0f, 0.0f, 1.0f, 0.0f});
 
         array_clear(g_RenderObjects);
-
-        // compute pipeline
-        image_transition(&g_IntermediateImage.image, swapchain_current_frame_command_buffer(),
-                         VK_IMAGE_LAYOUT_GENERAL);
-        DrawCommandBindCompute(&g_GradientPipeline);
-        DrawCommandBindComputeDescriptor(&g_GradientPipeline,
-                                         g_IntermediateImageDescriptors.descriptor, 0);
-
-        struct {
-                vec4 top;
-                vec4 bottom;
-                float padding[8];
-        } pc = {
-            .top = {1.0f, 0.0f, 0.0f, 1.0f},
-            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
-        };
-        DrawCommandSetComputePushConstants(&g_GradientPipeline, 0, sizeof(pc), &pc);
-        DrawCommandExecuteCompute(&g_IntermediateImage.image);
-
-        // graphics pipeline
-        image_transition(&g_IntermediateImage.image, swapchain_current_frame_command_buffer(),
-                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        image_transition(&g_DepthImage.image, swapchain_current_frame_command_buffer(),
-                         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-        DrawCommandBeginRendering(&g_IntermediateImage.image);
 }
 
 void agpu_end_frame() {
-        Instance *ssbo = (Instance *)swapchain_current_frame_get_buffer(FRAME_BUFFER_INSTANCES);
+        render_graph_execute(&g_render_graph, swapchain_current_frame_command_buffer());
 
-        uint32_t instance_count = 0;
-
-        DrawBatch batch = draw_batch_create(g_RenderObjects[0], instance_count);
-        draw_batch_add(&batch, g_RenderObjects[0], ssbo);
-        instance_count++;
-
-        for (int i = 1; i < array_length(g_RenderObjects); i += 1) {
-                if (!render_object_compatible(batch.object, g_RenderObjects[i])) {
-                        draw_batch_draw(&batch);
-
-                        batch = draw_batch_create(g_RenderObjects[i], instance_count);
-                        draw_batch_add(&batch, g_RenderObjects[i], ssbo);
-                } else {
-                        draw_batch_add(&batch, g_RenderObjects[i], ssbo);
-                }
-
-                instance_count++;
-        }
-
-        draw_batch_draw(&batch);
-
-        swapchain_current_frame_unmap_buffers();
-
-        vkCmdEndRendering(swapchain_current_frame_command_buffer());
-
-        DrawCommandCopyToSwapchain(&g_IntermediateImage.image);
         DrawCommandEndFrame();
 }
 
 void agpu_set_camera(Camera camera) {
-        DrawCommandBindGraphicsPipeline(&g_PbrPipeline);
-
         SceneData scene = {0};
 
         // Vulkan internally uses an inverted Y-axis compared to cglm. That is, y=0 is the top of

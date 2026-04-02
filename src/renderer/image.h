@@ -42,16 +42,11 @@ typedef struct {
 
         void *data;
         ImmediateCommand *imm;
-
-        VmaAllocator allocator;
-        VkDevice device;
 } AllocatedImageCreateInfo;
 
 typedef struct {
         Image image;
         VmaAllocation allocation;
-
-        VmaAllocator allocator;
 } AllocatedImage;
 
 bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image);

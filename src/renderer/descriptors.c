@@ -85,7 +85,7 @@ void descriptor_layout_destroy(DescriptorLayout *layout) {
 }
 
 void global_descriptor_layout_init() {
-        DescriptorBinding global_bindings[3] = {
+        DescriptorBinding global_bindings[4] = {
             {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
              .count = 1,
              .stage = VK_SHADER_STAGE_ALL_GRAPHICS},
@@ -96,6 +96,9 @@ void global_descriptor_layout_init() {
              .count = MAX_TEXTURES,
              .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
              .variable = true},
+            {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             .count = 1,
+             .stage = VK_SHADER_STAGE_COMPUTE_BIT},
         };
         uint32_t count = sizeof(global_bindings) / sizeof(DescriptorBinding);
 
@@ -216,6 +219,7 @@ void descriptor_write_image(Descriptor descriptor, Image *image, uint32_t bindin
             .descriptorCount = 1,
             .descriptorType = descriptor.layout->binding_types[binding],
             .pImageInfo = &image_info,
+
         };
 
         vkUpdateDescriptorSets(descriptor.layout->device, 1, &write_set, 0, NULL);

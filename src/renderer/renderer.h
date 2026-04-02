@@ -15,11 +15,6 @@
 #include <assert.h>
 #include <stdint.h>
 
-VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
-
 typedef struct {
         Buffer vertex;
         Buffer index;
@@ -77,6 +72,9 @@ typedef struct {
         Material *material;
         mat4 transform;
 } RenderObject;
+
+// TODO: GET RID OF THIS !!!
+extern RenderObject *g_RenderObjects;
 
 bool render_object_compatible(RenderObject a, RenderObject b);
 

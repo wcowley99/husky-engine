@@ -1,6 +1,7 @@
 #include "image.h"
 
 #include "buffer.h"
+#include "vk_context.h"
 
 #include "husky.h"
 
@@ -134,8 +135,6 @@ void image_buffer_copy(Image *dst, VkCommandBuffer cmd, VkBuffer buffer, VkExten
 }
 
 bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image) {
-        image->allocator = info->allocator;
-
         VkImageCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
@@ -154,7 +153,7 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
         };
 
         VkImage raw_image;
-        VK_EXPECT(vmaCreateImage(info->allocator, &create_info, &alloc_info, &raw_image,
+        VK_EXPECT(vmaCreateImage(vk_memory_allocator(), &create_info, &alloc_info, &raw_image,
                                  &image->allocation, NULL));
 
         VkExtent3D extent = {
@@ -170,7 +169,7 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
             .layout = VK_IMAGE_LAYOUT_UNDEFINED,
             .aspect_flags = info->aspect_flags,
 
-            .device = info->device,
+            .device = vk_context_device(),
         };
 
         ASSERT(image_create(&image_info, &image->image));
@@ -182,8 +181,8 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
                 Buffer staging_buffer;
                 buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY,
                               &staging_buffer);
-                vmaCopyMemoryToAllocation(info->allocator, info->data, staging_buffer.allocation, 0,
-                                          size);
+                vmaCopyMemoryToAllocation(vk_memory_allocator(), info->data,
+                                          staging_buffer.allocation, 0, size);
 
                 VkCommandBuffer cmd = info->imm->command;
                 immediate_command_begin(info->imm);
@@ -202,5 +201,5 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
 
 void allocated_image_destroy(AllocatedImage *image, VkDevice device) {
         image_destroy(&image->image, device);
-        vmaDestroyImage(image->allocator, image->image.image, image->allocation);
+        vmaDestroyImage(vk_memory_allocator(), image->image.image, image->allocation);
 }
