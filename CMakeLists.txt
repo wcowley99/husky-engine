@@ -15,16 +15,18 @@ find_package(SDL3 REQUIRED)
 add_subdirectory(external)
 
 add_library(engine-lib
-  src/model/model.c
-
+  src/renderer/model.c
   src/renderer/buffer.c
   src/renderer/command.c
   src/renderer/descriptors.c
+  src/renderer/draw.c
+  src/renderer/gpu_model.c
   src/renderer/image.c
   src/renderer/pipeline.c
   src/renderer/platform.c
   src/renderer/render_graph.c
   src/renderer/renderer.c
+  src/renderer/sampler.c
   src/renderer/swapchain.c
   src/renderer/vk_context.c
   src/renderer/vkb.c

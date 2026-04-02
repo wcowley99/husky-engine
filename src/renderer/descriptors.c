@@ -17,7 +17,6 @@ typedef struct {
 } DescriptorAllocator;
 
 static DescriptorAllocator g_descriptor_allocator;
-
 static DescriptorLayout g_global_descriptor_layout;
 
 DescriptorLayout descriptor_layout_create(VkDevice device, DescriptorBinding *bindings,
@@ -85,6 +84,16 @@ void descriptor_layout_destroy(DescriptorLayout *layout) {
         array_free(layout->binding_counts);
         array_free(layout->variable);
 }
+
+void descriptors_init() {
+        descriptor_allocator_init(NUM_FRAMES);
+
+        global_descriptor_layout_init();
+
+        ASSERT(descriptor_allocator_create(vk_context_device()));
+}
+
+void descriptors_shutdown() {}
 
 void global_descriptor_layout_init() {
         DescriptorBinding global_bindings[4] = {

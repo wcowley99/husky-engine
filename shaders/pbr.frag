@@ -16,7 +16,7 @@ layout(set = 0, binding = 2) uniform sampler2D diffuse_textures[];
 
 void main() {
   float light = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1);
-  
+
   vec3 color = inColor * texture(diffuse_textures[nonuniformEXT(inTexIndex)], inUV).xyz;
   vec3 ambient = color * sceneData.ambientColor.xyz;
 

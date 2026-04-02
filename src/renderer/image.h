@@ -41,7 +41,6 @@ typedef struct {
         VkImageAspectFlags aspect_flags;
 
         void *data;
-        ImmediateCommand *imm;
 } AllocatedImageCreateInfo;
 
 typedef struct {

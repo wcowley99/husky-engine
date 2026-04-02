@@ -27,6 +27,9 @@ DescriptorLayout descriptor_layout_create(VkDevice device, DescriptorBinding *bi
                                           uint32_t count);
 void descriptor_layout_destroy(DescriptorLayout *layout);
 
+void descriptors_init();
+void descriptors_shutdown();
+
 void global_descriptor_layout_init();
 DescriptorLayout *global_descriptor_layout();
 

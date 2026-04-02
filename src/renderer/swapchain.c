@@ -272,14 +272,20 @@ void *swapchain_current_frame_get_buffer(frame_buffer_type_t buffer_type) {
         return NULL;
 }
 
-void swapchain_current_frame_unmap_buffers() {
+void swapchain_current_frame_unmap_buffer(frame_buffer_type_t buffer_type) {
         frame_t *current_frame = &g_frames[g_current_frame_index];
 
-        if (current_frame->camera_uniform.mapped)
+        switch (buffer_type) {
+        case FRAME_BUFFER_CAMERA:
                 buffer_munmap(&current_frame->camera_uniform);
-
-        if (current_frame->instance_buffer.mapped)
+                break;
+        case FRAME_BUFFER_INSTANCES:
                 buffer_munmap(&current_frame->instance_buffer);
+                break;
+        default:
+                DEBUG("error: unknown buffer type %d", buffer_type);
+                exit(1);
+        }
 }
 
 VkCommandBuffer swapchain_current_frame_command_buffer() {

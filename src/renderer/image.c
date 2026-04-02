@@ -175,8 +175,6 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
         ASSERT(image_create(&image_info, &image->image));
 
         if (info->data) {
-                ASSERT(info->imm);
-
                 size_t size = info->extent.width * info->extent.height * info->extent.depth * 4;
                 Buffer staging_buffer;
                 buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY,
@@ -184,14 +182,13 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
                 vmaCopyMemoryToAllocation(vk_memory_allocator(), info->data,
                                           staging_buffer.allocation, 0, size);
 
-                immediate_command_begin(info->imm);
-                VkCommandBuffer cmd = info->imm->command;
+                VkCommandBuffer cmd = immediate_command_begin();
 
                 image_buffer_copy(&image->image, cmd, staging_buffer.buffer, extent,
                                   info->aspect_flags);
 
                 image_transition(&image->image, cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                immediate_command_end(info->imm);
+                immediate_command_end();
 
                 buffer_destroy(&staging_buffer);
         }

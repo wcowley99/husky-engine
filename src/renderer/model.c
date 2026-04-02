@@ -1,9 +1,10 @@
 #include "model.h"
 
-#include "common/array.h"
-#include "common/str.h"
+#include "image.h"
 
+#include "common/array.h"
 #include "common/log.h"
+#include "common/str.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -36,8 +37,6 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
         Mesh my_mesh;
         my_mesh.vertices = array(Vertex);
         my_mesh.indices = array(uint32_t);
-
-        DEBUG("mesh->mNumVertices = %d", mesh->mNumVertices);
 
         for (int i = 0; i < mesh->mNumVertices; i++) {
                 Vertex v;
@@ -76,7 +75,6 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
         }
 
         if (mesh->mMaterialIndex >= 0) {
-                DEBUG("mesh material = %d", mesh->mMaterialIndex);
                 my_mesh.material_index = mesh->mMaterialIndex;
         }
 
@@ -84,8 +82,6 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
 }
 
 void process_node(const struct aiNode *node, const struct aiScene *scene, Model *model) {
-        DEBUG("node->mNumMeshes = %d, node->mNumChildren = %d", node->mNumMeshes,
-              node->mNumChildren);
         for (int i = 0; i < node->mNumMeshes; i++) {
                 struct aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
                 process_mesh(mesh, scene, model);
@@ -107,8 +103,6 @@ void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
         info.specular[1] = 0.5f;
         info.specular[2] = 0.5f;
 
-        DEBUG("diffuse texture count: %d", aiGetMaterialTextureCount(mat, aiTextureType_DIFFUSE));
-
         int num_diffuse = aiGetMaterialTextureCount(mat, aiTextureType_DIFFUSE);
         if (num_diffuse == 1) {
                 struct aiString path;
@@ -120,17 +114,15 @@ void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
                 tex_path[dir.len] = '/';
                 memcpy(tex_path + dir.len + 1, path.data, path.length);
                 tex_path[dir.len + path.length + 1] = '\0';
-                DEBUG("tex_path = %s", tex_path);
 
                 int x, y, num_channels;
                 stbi_set_flip_vertically_on_load(1);
                 info.diffuse_tex = (char *)stbi_load(tex_path, &x, &y, &num_channels, 4);
 
                 if (info.diffuse_tex == NULL) {
-                        DEBUG("failed to load image: %s", stbi_failure_reason());
+                        ERROR("failed to load image: %s", stbi_failure_reason());
+                        exit(1);
                 }
-
-                DEBUG("loaded image: (%d, %d)", x, y);
 
                 info.diffuse_width = (size_t)x;
                 info.diffuse_height = (size_t)y;
@@ -150,7 +142,7 @@ Model load_model(char *filename) {
         Str dir = make_cutr(path, '/').head;
 
         uint32_t flags = aiProcess_JoinIdenticalVertices | aiProcess_Triangulate;
-        const struct aiScene *scene = aiImportFile(filename, 0);
+        const struct aiScene *scene = aiImportFile(filename, flags);
 
         Model model;
         model.meshes = array(Mesh);

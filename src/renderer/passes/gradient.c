@@ -67,7 +67,7 @@ void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
         uint32_t sizes[] = {sizeof(float) * 16};
         ComputePipelineInfo pipeline_info = {
             .descriptors = &g_gradient_pass.pass_layout.layout,
-            .num_descriptors = 2,
+            .num_descriptors = 1,
             .push_constant_sizes = sizes,
             .num_push_constant_sizes = 1,
             .shader_source = (const uint32_t *)gradient_comp,

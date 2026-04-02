@@ -39,7 +39,11 @@ int main(int argc, char **argv) {
                 handle_events(&exit);
 
                 agpu_begin_frame();
+
                 world_progress();
+
+                renderer_draw();
+
                 agpu_end_frame();
         }
 

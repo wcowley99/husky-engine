@@ -1,5 +1,7 @@
 #include "world.h"
 
+#include "renderer/draw.h"
+#include "renderer/gpu_model.h"
 #include "renderer/renderer.h"
 
 #include <cglm/cglm.h>
@@ -28,14 +30,17 @@ static void renderables_collect(ecs_iter_t *it) {
         scale_t *s = ecs_field(it, scale_t, 1);
         model_component_t *m = ecs_field(it, model_component_t, 2);
 
+        draw_buffers_clear();
         for (int i = 0; i < it->count; i++) {
                 mat4 model;
                 glm_mat4_identity(model);
                 glm_translate(model, p[i].position);
                 glm_scale(model, s[i].scale);
 
-                agpu_draw_model(m[i].model, model);
+                renderable_record(m[i].model, model);
         }
+
+        draw_batches_upload();
 }
 
 static void set_camera(ecs_iter_t *it) {

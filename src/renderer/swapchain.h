@@ -21,7 +21,7 @@ void swapchain_current_frame_submit();
 void swapchain_current_frame_begin();
 Descriptor *swapchain_current_frame_global_descriptor();
 void *swapchain_current_frame_get_buffer(frame_buffer_type_t buffer_type);
-void swapchain_current_frame_unmap_buffers();
+void swapchain_current_frame_unmap_buffer(frame_buffer_type_t buffer_type);
 
 VkCommandBuffer swapchain_current_frame_command_buffer();
 Image *swapchain_current_image();
