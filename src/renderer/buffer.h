@@ -9,8 +9,6 @@ typedef struct {
         VmaAllocation allocation;
         VmaAllocationInfo info;
 
-        VmaAllocator allocator;
-
         int mapped;
 } Buffer;
 

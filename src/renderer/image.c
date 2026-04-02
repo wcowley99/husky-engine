@@ -184,8 +184,8 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
                 vmaCopyMemoryToAllocation(vk_memory_allocator(), info->data,
                                           staging_buffer.allocation, 0, size);
 
-                VkCommandBuffer cmd = info->imm->command;
                 immediate_command_begin(info->imm);
+                VkCommandBuffer cmd = info->imm->command;
 
                 image_buffer_copy(&image->image, cmd, staging_buffer.buffer, extent,
                                   info->aspect_flags);

@@ -29,9 +29,6 @@ ImmediateCommand g_ImmediateCommand;
 DescriptorLayout g_GlobalDescriptorLayout;
 VkDescriptorSetLayout g_MaterialDescriptorLayout;
 
-DescriptorLayout g_IntermediateImageDescriptorLayout;
-Descriptor g_IntermediateImageDescriptors;
-
 GraphicsPipeline *g_ActiveGraphicsPipeline;
 
 MeshBuffer *g_MeshBuffers;
@@ -72,13 +69,13 @@ uint32_t mesh_buffer_create(Mesh *mesh) {
         Buffer staging_buffer;
         buffer_create(vertex_buffer_size + index_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
-        vmaCopyMemoryToAllocation(staging_buffer.allocator, mesh->vertices,
-                                  staging_buffer.allocation, 0, vertex_buffer_size);
-        vmaCopyMemoryToAllocation(staging_buffer.allocator, mesh->indices,
-                                  staging_buffer.allocation, vertex_buffer_size, index_buffer_size);
+        vmaCopyMemoryToAllocation(vk_memory_allocator(), mesh->vertices, staging_buffer.allocation,
+                                  0, vertex_buffer_size);
+        vmaCopyMemoryToAllocation(vk_memory_allocator(), mesh->indices, staging_buffer.allocation,
+                                  vertex_buffer_size, index_buffer_size);
 
-        VkCommandBuffer cmd = g_ImmediateCommand.command;
         immediate_command_begin(&g_ImmediateCommand);
+        VkCommandBuffer cmd = g_ImmediateCommand.command;
 
         VkBufferCopy vertex_copy = {.size = vertex_buffer_size};
         VkBufferCopy index_copy = {.size = index_buffer_size, .srcOffset = vertex_buffer_size};
@@ -160,7 +157,6 @@ void RendererShutdown() {
 
         descriptor_allocator_destroy();
         descriptor_layout_destroy(&g_GlobalDescriptorLayout);
-        descriptor_layout_destroy(&g_IntermediateImageDescriptorLayout);
         // vkDestroyDescriptorSetLayout(vk_context_device(), g_MaterialDescriptorLayout, NULL);
 
         gradient_pass_cleanup();

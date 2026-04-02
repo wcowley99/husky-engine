@@ -180,6 +180,7 @@ bool swapchain_next_frame() {
         // fence fails (times out) or quit?
         VK_EXPECT(
             vkWaitForFences(vk_context_device(), 1, &next->render_fence, VK_TRUE, 1000000000));
+        VK_EXPECT(vkResetFences(vk_context_device(), 1, &next->render_fence));
 
         VK_EXPECT(vkAcquireNextImageKHR(vk_context_device(), g_Swapchain, 1000000000,
                                         next->swapchain_semaphore, VK_NULL_HANDLE,
@@ -246,7 +247,6 @@ void swapchain_current_frame_submit() {
 void swapchain_current_frame_begin() {
         frame_t *current_frame = &g_frames[g_current_frame_index];
 
-        vkResetFences(vk_context_device(), 1, &current_frame->render_fence);
         begin_command_buffer(swapchain_current_frame_command_buffer());
 }
 

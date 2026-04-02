@@ -29,17 +29,17 @@
 #if LOG_LEVEL <= LOG_LEVEL_DEBUG
 #define DEBUG(fmt, ...) LOG_MESSAGE("DEBUG", stdout, fmt, ##__VA_ARGS__);
 #else
-#define DEBUG(FMT, ...) (void(0))
+#define DEBUG(FMT, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL <= LOG_LEVEL_INFO
 #define INFO(fmt, ...) LOG_MESSAGE("INFO", stdout, fmt, ##__VA_ARGS__);
 #else
-#define INFO(FMT, ...) (void(0))
+#define INFO(FMT, ...) ((void)0)
 #endif
 
 #if LOG_LEVEL <= LOG_LEVEL_ERROR
 #define ERROR(fmt, ...) LOG_MESSAGE("ERROR", stdout, fmt, ##__VA_ARGS__);
 #else
-#define ERROR(FMT, ...) (void(0))
+#define ERROR(FMT, ...) ((void)0)
 #endif
