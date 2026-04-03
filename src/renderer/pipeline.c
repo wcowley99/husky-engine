@@ -1,6 +1,4 @@
-#include "pipeline.h"
-
-#include "husky.h"
+#include "renderer/pipeline.h"
 
 #include <stdlib.h>
 

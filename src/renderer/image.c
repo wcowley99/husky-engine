@@ -1,7 +1,7 @@
-#include "image.h"
+#include "renderer/image.h"
 
-#include "buffer.h"
-#include "vk_context.h"
+#include "renderer/buffer.h"
+#include "renderer/vk_context.h"
 
 #include "husky.h"
 

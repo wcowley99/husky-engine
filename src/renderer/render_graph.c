@@ -1,8 +1,8 @@
-#include "render_graph.h"
+#include "renderer/render_graph.h"
 
-#include "image.h"
-#include "swapchain.h"
-#include "vk_context.h"
+#include "renderer/image.h"
+#include "renderer/swapchain.h"
+#include "renderer/vk_context.h"
 
 #include "husky.h"
 
@@ -32,6 +32,13 @@ attachment_handle_t render_graph_add_attachment(render_graph_t *graph, VkExtent3
 void render_graph_destroy(render_graph_t *graph) {
         for (int i = 0; i < graph->attachment_count; i++) {
                 allocated_image_destroy(&graph->attachments[i].image, vk_context_device());
+        }
+
+        for (int i = 0; i < graph->pass_count; i++) {
+                render_pass_t *pass = &graph->render_passes[i];
+
+                if (pass->cleanup)
+                        pass->cleanup();
         }
 }
 

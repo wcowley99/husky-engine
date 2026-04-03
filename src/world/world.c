@@ -1,9 +1,9 @@
-#include "world.h"
+#include "world/world.h"
 
-#include "renderer/draw.h"
-#include "renderer/gpu_model.h"
+#include "renderer/camera.h"
 #include "renderer/renderer.h"
 
+#include <SDL3/SDL.h>
 #include <cglm/cglm.h>
 #include <flecs.h>
 
@@ -30,7 +30,6 @@ static void renderables_collect(ecs_iter_t *it) {
         scale_t *s = ecs_field(it, scale_t, 1);
         model_component_t *m = ecs_field(it, model_component_t, 2);
 
-        draw_buffers_clear();
         for (int i = 0; i < it->count; i++) {
                 mat4 model;
                 glm_mat4_identity(model);
@@ -39,8 +38,6 @@ static void renderables_collect(ecs_iter_t *it) {
 
                 renderable_record(m[i].model, model);
         }
-
-        draw_batches_upload();
 }
 
 static void set_camera(ecs_iter_t *it) {
@@ -54,7 +51,7 @@ static void set_camera(ecs_iter_t *it) {
         glm_vec3_copy(p->position, camera.position);
         glm_vec3_copy(t->target, camera.target);
 
-        agpu_set_camera(camera);
+        renderer_set_camera(camera);
 }
 
 static void move(ecs_iter_t *it) {
@@ -103,7 +100,7 @@ static void move(ecs_iter_t *it) {
 }
 
 void world_init() {
-        GpuModel model = agpu_load_model("assets/Sponza/glTF/Sponza.gltf");
+        GpuModel model = renderer_load_model("assets/Sponza/glTF/Sponza.gltf");
 
         ecs = ecs_init();
         ECS_COMPONENT(ecs, position_t);

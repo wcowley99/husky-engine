@@ -30,6 +30,7 @@ add_library(engine-lib
   src/renderer/swapchain.c
   src/renderer/vk_context.c
   src/renderer/vkb.c
+  src/renderer/camera.c
 
   src/renderer/passes/pbr.c
   src/renderer/passes/gradient.c
@@ -39,7 +40,6 @@ add_library(engine-lib
   src/common/str.c
   src/common/util.c
 
-  src/scene/camera.c
 
   src/world/world.c
 )
@@ -64,7 +64,6 @@ target_include_directories(engine-lib PUBLIC
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/external/assimp/include
 
-  src
   include
 )
 

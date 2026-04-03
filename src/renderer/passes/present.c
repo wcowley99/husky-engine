@@ -1,10 +1,7 @@
-#include "passes.h"
+#include "renderer/render_passes.h"
 
-#include "renderer/descriptors.h"
-#include "renderer/pipeline.h"
 #include "renderer/render_graph.h"
 #include "renderer/swapchain.h"
-#include "renderer/vk_context.h"
 
 typedef struct present_pass_t {
         render_graph_t *graph;
@@ -13,7 +10,7 @@ typedef struct present_pass_t {
 
 static present_pass_t g_present_pass;
 
-void present_callback(VkCommandBuffer cmd) {
+static void present_callback(VkCommandBuffer cmd) {
         Image *src = render_graph_attachment_image(g_present_pass.graph, g_present_pass.image);
         Image *dst = render_graph_attachment_image(g_present_pass.graph, ATTACHMENT_BACKBUFFER);
 

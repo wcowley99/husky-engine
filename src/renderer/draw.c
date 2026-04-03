@@ -1,8 +1,17 @@
-#include "draw.h"
+#include "renderer/draw.h"
 
-#include "swapchain.h"
+#include "renderer/renderer.h"
+#include "renderer/swapchain.h"
 
 #include "common/array.h"
+
+typedef struct {
+        uint32_t mesh;
+        material_t material;
+        mat4 transform;
+
+        bool recorded;
+} RenderObject;
 
 static RenderObject *g_render_objects;
 static DrawBatch *g_draw_batches;
@@ -38,15 +47,6 @@ void draw_buffers_clear() {
         array_header(g_render_objects)->length = 0;
 }
 
-DrawBatch draw_batch_create(uint32_t mesh, uint32_t first_instance) {
-        DrawBatch batch = {0};
-        batch.first_instance = first_instance;
-        batch.count = 0;
-        batch.mesh = mesh;
-
-        return batch;
-}
-
 static void render_object_compact(RenderObject obj, Instance *ssbo, uint32_t *instance_count) {
         DrawBatch draw_batch = {.mesh = obj.mesh, .first_instance = *instance_count};
 
@@ -74,9 +74,6 @@ void draw_batches_upload() {
                 if (!g_render_objects[i].recorded)
                         render_object_compact(g_render_objects[i], ssbo, &instance_count);
         }
-
-        // DEBUG("%zu draw batches, %zu render objects", array_length(g_draw_batches),
-        //       array_length(g_render_objects));
 
         swapchain_current_frame_unmap_buffer(FRAME_BUFFER_INSTANCES);
 }

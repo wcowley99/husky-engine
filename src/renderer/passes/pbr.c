@@ -1,10 +1,9 @@
-#include "passes.h"
+#include "renderer/render_passes.h"
 
 #include "renderer/descriptors.h"
 #include "renderer/draw.h"
 #include "renderer/pipeline.h"
 #include "renderer/render_graph.h"
-#include "renderer/renderer.h"
 #include "renderer/swapchain.h"
 #include "renderer/vk_context.h"
 
@@ -18,6 +17,28 @@ typedef struct pbr_pass {
 } pbr_pass_t;
 
 static pbr_pass_t g_pbr_pass;
+
+static void pbr_pipeline_init(VkFormat format);
+static void pbr_callback(VkCommandBuffer cmd);
+static void pbr_pass_cleanup();
+
+void pbr_pass_register(render_graph_t *graph, attachment_handle_t hdr, attachment_handle_t depth) {
+        g_pbr_pass.hdr = hdr;
+        g_pbr_pass.depth = depth;
+
+        pbr_pipeline_init(render_graph_attachment_format(graph, hdr));
+
+        render_pass_t pass = {
+            .record = pbr_callback,
+            .cleanup = pbr_pass_cleanup,
+            .attachment_count = 2,
+            .attachments = {hdr, depth},
+            .attachment_states = {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL},
+        };
+
+        render_graph_register_pass(graph, pass);
+}
 
 static void pbr_pipeline_init(VkFormat format) {
         VkPushConstantRange push_constants[] = {
@@ -57,7 +78,7 @@ static void pbr_pipeline_init(VkFormat format) {
         free(frag);
 }
 
-void pbr_callback(VkCommandBuffer cmd) {
+static void pbr_callback(VkCommandBuffer cmd) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g_pbr_pass.pipeline.layout, 0,
                                 1, &swapchain_current_frame_global_descriptor()->descriptor, 0,
                                 NULL);
@@ -67,21 +88,6 @@ void pbr_callback(VkCommandBuffer cmd) {
         draw_batches_record();
 }
 
-void pbr_pass_register(render_graph_t *graph, attachment_handle_t hdr, attachment_handle_t depth) {
-        g_pbr_pass.hdr = hdr;
-        g_pbr_pass.depth = depth;
-
-        pbr_pipeline_init(render_graph_attachment_format(graph, hdr));
-
-        render_pass_t pass = {
-            .record = pbr_callback,
-            .attachment_count = 2,
-            .attachments = {hdr, depth},
-            .attachment_states = {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL},
-        };
-
-        render_graph_register_pass(graph, pass);
+static void pbr_pass_cleanup() {
+        graphics_pipeline_destroy(&g_pbr_pass.pipeline, vk_context_device());
 }
-
-void pbr_pass_cleanup() { graphics_pipeline_destroy(&g_pbr_pass.pipeline, vk_context_device()); }

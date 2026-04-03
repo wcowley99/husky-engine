@@ -1,12 +1,10 @@
-#include "swapchain.h"
+#include "renderer/swapchain.h"
 
-#include "vk_context.h"
+#include "renderer/vk_context.h"
 
-#include "buffer.h"
-#include "command.h"
-#include "descriptors.h"
-
-#include "vkb.h"
+#include "renderer/buffer.h"
+#include "renderer/descriptors.h"
+#include "renderer/vkb.h"
 
 #include "husky.h"
 

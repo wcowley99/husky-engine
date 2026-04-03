@@ -1,6 +1,6 @@
-#include "command.h"
+#include "renderer/command.h"
 
-#include "vk_context.h"
+#include "renderer/vk_context.h"
 
 typedef struct {
         VkCommandPool pool;

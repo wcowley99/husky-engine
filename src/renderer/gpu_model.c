@@ -1,9 +1,10 @@
-#include "gpu_model.h"
+#include "renderer/gpu_model.h"
 
-#include "image.h"
-#include "sampler.h"
-#include "swapchain.h"
-#include "vk_context.h"
+#include "renderer/image.h"
+#include "renderer/renderer.h"
+#include "renderer/sampler.h"
+#include "renderer/swapchain.h"
+#include "renderer/vk_context.h"
 
 #include "common/array.h"
 
@@ -97,7 +98,7 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
         return index;
 }
 
-GpuModel agpu_load_model(char *filename) {
+GpuModel renderer_load_model(char *filename) {
         Model m = load_model(filename);
         GpuModel r;
         r.meshes = array(GpuMesh);

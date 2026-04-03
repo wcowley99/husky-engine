@@ -1,6 +1,4 @@
-#include "model.h"
-
-#include "image.h"
+#include "renderer/model.h"
 
 #include "common/array.h"
 #include "common/log.h"

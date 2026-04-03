@@ -1,5 +1,6 @@
-#include "passes.h"
+#include "renderer/render_passes.h"
 
+#include "renderer/descriptors.h"
 #include "renderer/pipeline.h"
 #include "renderer/vk_context.h"
 
@@ -18,29 +19,8 @@ typedef struct gradient_pass {
 
 static gradient_pass_t g_gradient_pass;
 
-void gradient_callback(VkCommandBuffer cmd) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_gradient_pass.pipeline.pipeline);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                g_gradient_pass.pipeline.layout, 0, 1,
-                                &g_gradient_pass.pass_descriptor.descriptor, 0, NULL);
-
-        struct {
-                vec4 top;
-                vec4 bottom;
-                float padding[8];
-        } pc = {
-            .top = {1.0f, 0.0f, 0.0f, 1.0f},
-            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
-        };
-
-        vkCmdPushConstants(cmd, g_gradient_pass.pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                           sizeof(pc), &pc);
-
-        Image *image =
-            render_graph_attachment_image(g_gradient_pass.graph, g_gradient_pass.image_ref);
-        vkCmdDispatch(cmd, ceilf(image->extent.width / 16.0f), ceilf(image->extent.height / 16.0f),
-                      1);
-}
+static void gradient_callback(VkCommandBuffer cmd);
+static void gradient_pass_cleanup();
 
 void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
         g_gradient_pass.image_ref = image;
@@ -79,6 +59,7 @@ void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
 
         render_pass_t pass = {
             .record = gradient_callback,
+            .cleanup = gradient_pass_cleanup,
             .attachment_count = 1,
             .attachments = {image},
             .attachment_states = {VK_IMAGE_LAYOUT_GENERAL},
@@ -87,6 +68,31 @@ void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
         render_graph_register_pass(graph, pass);
 }
 
-void gradient_pass_cleanup() {
+static void gradient_callback(VkCommandBuffer cmd) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_gradient_pass.pipeline.pipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                g_gradient_pass.pipeline.layout, 0, 1,
+                                &g_gradient_pass.pass_descriptor.descriptor, 0, NULL);
+
+        struct {
+                vec4 top;
+                vec4 bottom;
+                float padding[8];
+        } pc = {
+            .top = {1.0f, 0.0f, 0.0f, 1.0f},
+            .bottom = {0.0f, 0.0f, 1.0f, 1.0f},
+        };
+
+        vkCmdPushConstants(cmd, g_gradient_pass.pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                           sizeof(pc), &pc);
+
+        Image *image =
+            render_graph_attachment_image(g_gradient_pass.graph, g_gradient_pass.image_ref);
+        vkCmdDispatch(cmd, ceilf(image->extent.width / 16.0f), ceilf(image->extent.height / 16.0f),
+                      1);
+}
+
+static void gradient_pass_cleanup() {
         compute_pipeline_destroy(&g_gradient_pass.pipeline, vk_context_device());
+        descriptor_layout_destroy(&g_gradient_pass.pass_layout);
 }

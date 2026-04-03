@@ -1,6 +1,6 @@
-#include "buffer.h"
+#include "renderer/buffer.h"
 
-#include "vk_context.h"
+#include "renderer/vk_context.h"
 
 #include "husky.h"
 

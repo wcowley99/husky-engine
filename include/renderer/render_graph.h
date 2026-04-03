@@ -1,8 +1,6 @@
 #pragma once
 
-#include "descriptors.h"
 #include "image.h"
-#include "vkb.h"
 
 #include <stdint.h>
 
@@ -18,6 +16,7 @@ typedef struct render_attachment {
 
 typedef struct render_pass {
         void (*record)(VkCommandBuffer);
+        void (*cleanup)(void);
 
         attachment_handle_t attachments[8];
         VkImageLayout attachment_states[8];

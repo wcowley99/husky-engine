@@ -1,6 +1,6 @@
-#include "sampler.h"
+#include "renderer/sampler.h"
 
-#include "vk_context.h"
+#include "renderer/vk_context.h"
 
 static VkSampler g_linear_sampler;
 static VkSampler g_nearest_sampler;

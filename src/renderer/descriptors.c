@@ -1,7 +1,7 @@
-#include "descriptors.h"
+#include "renderer/descriptors.h"
 
-#include "vk_context.h"
-#include "vkb.h"
+#include "renderer/vk_context.h"
+#include "renderer/vkb.h"
 
 #include "common/array.h"
 
@@ -93,7 +93,10 @@ void descriptors_init() {
         ASSERT(descriptor_allocator_create(vk_context_device()));
 }
 
-void descriptors_shutdown() {}
+void descriptors_shutdown() {
+        descriptor_allocator_destroy();
+        vkDestroyDescriptorSetLayout(vk_context_device(), g_global_descriptor_layout.layout, NULL);
+}
 
 void global_descriptor_layout_init() {
         DescriptorBinding global_bindings[4] = {
