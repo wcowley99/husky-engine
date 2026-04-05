@@ -21,7 +21,7 @@ typedef struct {
 
 static vk_context_t g_context;
 
-VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
+static VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
@@ -40,7 +40,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL validation_message_callback(
         return VK_FALSE;
 }
 
-bool create_instance() {
+static void create_instance() {
         const static char *APP_NAME = "Husky Engine";
 
         VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -89,10 +89,9 @@ bool create_instance() {
         volkLoadInstance(g_context.instance);
 
         free(extensions);
-        return true;
 }
 
-bool create_debug_messenger() {
+static void create_debug_messenger() {
         VkDebugUtilsMessengerCreateInfoEXT create_info = {
             .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
             .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -106,10 +105,9 @@ bool create_debug_messenger() {
 
         VK_EXPECT(vkCreateDebugUtilsMessengerEXT(g_context.instance, &create_info, NULL,
                                                  &g_context.debug_messenger));
-        return true;
 }
 
-bool is_gpu_suitable(VkPhysicalDevice gpu) {
+static bool is_gpu_suitable(VkPhysicalDevice gpu) {
         VkPhysicalDeviceProperties p;
         VkPhysicalDeviceVulkan12Features f12 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -152,13 +150,13 @@ bool is_gpu_suitable(VkPhysicalDevice gpu) {
         return true;
 }
 
-bool select_gpu() {
+static void select_gpu() {
         uint32_t count = 0;
         vkEnumeratePhysicalDevices(g_context.instance, &count, NULL);
 
         if (count == 0) {
                 printf("Failed to find GPUs with Vulkan support.\n");
-                return false;
+                exit(1);
         }
 
         VkPhysicalDevice *gpus = malloc(sizeof(VkPhysicalDevice *) * count);
@@ -172,10 +170,9 @@ bool select_gpu() {
         }
 
         free(gpus);
-        return true;
 }
 
-bool create_logical_device() {
+static void create_logical_device() {
         float priorities[] = {1.0f};
         VkDeviceQueueCreateInfo queue_info = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -220,18 +217,16 @@ bool create_logical_device() {
 
         vkGetDeviceQueue(g_context.device, g_context.queue_family_index, 0,
                          &g_context.graphics_queue);
-
-        return true;
 }
 
 void vk_context_init() {
-        ASSERT(create_instance());
-        ASSERT(create_debug_messenger());
+        create_instance();
+        create_debug_messenger();
 
         g_context.surface = platform_create_surface(g_context.instance);
 
-        ASSERT(select_gpu());
-        ASSERT(create_logical_device());
+        select_gpu();
+        create_logical_device();
 }
 
 void vk_context_shutdown() {

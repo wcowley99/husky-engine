@@ -2,8 +2,6 @@
 
 #include "vkb.h"
 
-#include "command.h"
-
 #include <stdbool.h>
 
 typedef struct {
@@ -24,7 +22,7 @@ typedef struct {
         VkImageLayout layout;
 } Image;
 
-bool image_create(ImageCreateInfo *info, Image *image);
+void image_create(ImageCreateInfo *info, Image *image);
 void image_destroy(Image *image, VkDevice device);
 
 void image_transition(Image *image, VkCommandBuffer command, VkImageLayout layout);
@@ -48,6 +46,5 @@ typedef struct {
         VmaAllocation allocation;
 } AllocatedImage;
 
-bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image);
-
+void allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image);
 void allocated_image_destroy(AllocatedImage *image, VkDevice device);

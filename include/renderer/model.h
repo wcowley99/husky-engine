@@ -6,45 +6,35 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct {
+typedef struct vertex {
         vec3 position;
         float uv_x;
         vec3 normal;
         float uv_y;
         vec4 color;
-} Vertex;
+} vertex_t;
 
-typedef struct {
-        Vertex *vertices;
+typedef struct mesh {
+        vertex_t *vertices;
         uint32_t *indices;
 
         uint32_t material_index;
-} Mesh;
+} mesh_t;
 
-void MeshFree(Mesh *mesh);
-
-typedef struct {
-        float u;
-        float v;
-} TextureCoord;
-
-typedef struct {
+typedef struct material_info {
         vec3 ambient;
         vec3 specular;
 
         char *diffuse_tex;
         size_t diffuse_width;
         size_t diffuse_height;
-} MaterialInfo;
+} material_info_t;
 
-void material_info_destroy(MaterialInfo *mat);
+typedef struct model {
+        mesh_t *meshes;
 
-typedef struct {
-        Mesh *meshes;
+        material_info_t *materials;
+} model_t;
 
-        MaterialInfo *materials;
-} Model;
-
-Model load_model(char *filename);
-
-void model_destroy(Model m);
+model_t load_model(char *filename);
+void model_destroy(model_t m);

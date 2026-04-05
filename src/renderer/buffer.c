@@ -32,7 +32,7 @@ void vk_memory_allocator_shutdown() { vmaDestroyAllocator(g_allocator); }
 
 VmaAllocator vk_memory_allocator() { return g_allocator; }
 
-void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer) {
+void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, buffer_t *buffer) {
         VkBufferCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = size,
@@ -51,11 +51,11 @@ void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, 
         buffer->mapped = 0;
 }
 
-void buffer_destroy(Buffer *buffer) {
+void buffer_destroy(buffer_t *buffer) {
         vmaDestroyBuffer(vk_memory_allocator(), buffer->buffer, buffer->allocation);
 }
 
-void *buffer_mmap(Buffer *buffer) {
+void *buffer_mmap(buffer_t *buffer) {
         ASSERT(!buffer->mapped);
         buffer->mapped = 1;
 
@@ -65,7 +65,7 @@ void *buffer_mmap(Buffer *buffer) {
         return ssbo;
 }
 
-void buffer_munmap(Buffer *buffer) {
+void buffer_munmap(buffer_t *buffer) {
         ASSERT(buffer->mapped);
         buffer->mapped = 0;
 

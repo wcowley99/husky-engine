@@ -15,10 +15,6 @@
 
 #include "husky.h"
 
-#include <cglm/cam.h>
-
-#include <malloc.h>
-
 static render_graph_t g_render_graph;
 
 bool renderer_init(renderer_config_t *c) {
@@ -30,7 +26,7 @@ bool renderer_init(renderer_config_t *c) {
         descriptors_init();
         samplers_init();
 
-        ASSERT(swapchain_create());
+        swapchain_create();
 
         immediate_command_init();
 

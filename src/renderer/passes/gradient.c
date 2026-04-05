@@ -6,10 +6,8 @@
 
 #include "common/util.h"
 
-#include "husky.h"
-
 typedef struct gradient_pass {
-        ComputePipeline pipeline;
+        compute_pipeline_t pipeline;
         DescriptorLayout pass_layout;
         Descriptor pass_descriptor;
 
@@ -45,7 +43,7 @@ void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
         char *gradient_comp = ReadFile("shaders/gradient2.comp.spv", &gradient_size);
 
         uint32_t sizes[] = {sizeof(float) * 16};
-        ComputePipelineInfo pipeline_info = {
+        comnpute_pipeline_config_t pipeline_info = {
             .descriptors = &g_gradient_pass.pass_layout.layout,
             .num_descriptors = 1,
             .push_constant_sizes = sizes,
@@ -53,8 +51,7 @@ void gradient_pass_register(render_graph_t *graph, attachment_handle_t image) {
             .shader_source = (const uint32_t *)gradient_comp,
             .shader_source_size = gradient_size / 4,
         };
-        ASSERT(compute_pipeline_create(vk_context_device(), &pipeline_info,
-                                       &g_gradient_pass.pipeline));
+        g_gradient_pass.pipeline = compute_pipeline_create(vk_context_device(), &pipeline_info);
         free(gradient_comp);
 
         render_pass_t pass = {

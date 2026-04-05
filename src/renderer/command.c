@@ -2,16 +2,16 @@
 
 #include "renderer/vk_context.h"
 
-typedef struct {
+typedef struct immediate_command {
         VkCommandPool pool;
         VkCommandBuffer command;
         VkFence fence;
 
         VkDevice device;
         VkQueue queue;
-} ImmediateCommand;
+} immediate_command_t;
 
-static ImmediateCommand g_immediate_command;
+static immediate_command_t g_immediate_command;
 
 void immediate_command_init() {
         g_immediate_command.queue = vk_context_graphics_queue();

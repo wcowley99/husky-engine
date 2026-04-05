@@ -4,7 +4,7 @@
 #include "vkb.h"
 
 // abstract gpu functions
-uint32_t gpu_upload_texture(MaterialInfo *mats);
+uint32_t gpu_upload_texture(material_info_t *mats);
 
 void gpu_unload_models();
 

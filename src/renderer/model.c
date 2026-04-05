@@ -15,29 +15,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-        uint32_t v[3];
-        uint32_t vt[3];
-        uint32_t vn[3];
-} Face;
-
-void MeshFree(Mesh *mesh) {
+static void mesh_free(mesh_t *mesh) {
         array_free(mesh->vertices);
         array_free(mesh->indices);
 }
 
-void material_info_destroy(MaterialInfo *mat) {
+static void material_info_destroy(material_info_t *mat) {
         if (mat->diffuse_tex)
                 free(mat->diffuse_tex);
 }
 
-void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model *model) {
-        Mesh my_mesh;
-        my_mesh.vertices = array(Vertex);
+static void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, model_t *model) {
+        mesh_t my_mesh;
+        my_mesh.vertices = array(vertex_t);
         my_mesh.indices = array(uint32_t);
 
         for (int i = 0; i < mesh->mNumVertices; i++) {
-                Vertex v;
+                vertex_t v;
                 v.position[0] = mesh->mVertices[i].x;
                 v.position[1] = mesh->mVertices[i].y;
                 v.position[2] = mesh->mVertices[i].z;
@@ -79,7 +73,7 @@ void process_mesh(const struct aiMesh *mesh, const struct aiScene *scene, Model 
         array_append(model->meshes, my_mesh);
 }
 
-void process_node(const struct aiNode *node, const struct aiScene *scene, Model *model) {
+static void process_node(const struct aiNode *node, const struct aiScene *scene, model_t *model) {
         for (int i = 0; i < node->mNumMeshes; i++) {
                 struct aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
                 process_mesh(mesh, scene, model);
@@ -90,8 +84,8 @@ void process_node(const struct aiNode *node, const struct aiScene *scene, Model 
         }
 }
 
-void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
-        MaterialInfo info;
+static void process_material(const struct aiMaterial *mat, Str dir, model_t *model) {
+        material_info_t info;
 
         info.ambient[0] = 1.0f;
         info.ambient[1] = 1.0f;
@@ -135,16 +129,16 @@ void process_material(const struct aiMaterial *mat, Str dir, Model *model) {
         array_append(model->materials, info);
 }
 
-Model load_model(char *filename) {
+model_t load_model(char *filename) {
         Str path = str_span(filename, filename + strlen(filename));
         Str dir = make_cutr(path, '/').head;
 
         uint32_t flags = aiProcess_JoinIdenticalVertices | aiProcess_Triangulate;
         const struct aiScene *scene = aiImportFile(filename, flags);
 
-        Model model;
-        model.meshes = array(Mesh);
-        model.materials = array(MaterialInfo);
+        model_t model;
+        model.meshes = array(mesh_t);
+        model.materials = array(material_info_t);
 
         if (scene == NULL) {
                 DEBUG("scene failed to load!");
@@ -160,9 +154,9 @@ Model load_model(char *filename) {
         return model;
 }
 
-void model_destroy(Model m) {
+void model_destroy(model_t m) {
         for (int i = 0; i < array_length(m.meshes); i++) {
-                MeshFree(&m.meshes[i]);
+                mesh_free(&m.meshes[i]);
         }
 
         for (int i = 0; i < array_length(m.materials); i += 1) {

@@ -7,11 +7,10 @@
 #include "renderer/swapchain.h"
 #include "renderer/vk_context.h"
 
-#include "common/array.h"
 #include "common/util.h"
 
 typedef struct pbr_pass {
-        GraphicsPipeline pipeline;
+        graphics_pipeline_t pipeline;
         attachment_handle_t hdr;
         attachment_handle_t depth;
 } pbr_pass_t;
@@ -54,7 +53,7 @@ static void pbr_pipeline_init(VkFormat format) {
         char *frag = ReadFile("shaders/pbr.frag.spv", &frag_size);
 
         VkDescriptorSetLayout layouts[] = {global_descriptor_layout()->layout};
-        GraphicsPipelineCreateInfo mesh_pipeline_info = {
+        graphics_pipeline_config_t mesh_pipeline_info = {
             .descriptors = layouts,
             .num_descriptors = 1,
             .push_constants = push_constants,
@@ -72,7 +71,7 @@ static void pbr_pipeline_init(VkFormat format) {
             .depth_testing = true,
             .depth_compare_op = VK_COMPARE_OP_LESS,
         };
-        graphics_pipeline_create(vk_context_device(), &mesh_pipeline_info, &g_pbr_pass.pipeline);
+        g_pbr_pass.pipeline = graphics_pipeline_create(vk_context_device(), &mesh_pipeline_info);
 
         free(vert);
         free(frag);

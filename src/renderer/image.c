@@ -1,11 +1,10 @@
 #include "renderer/image.h"
 
 #include "renderer/buffer.h"
+#include "renderer/command.h"
 #include "renderer/vk_context.h"
 
-#include "husky.h"
-
-bool image_create(ImageCreateInfo *info, Image *image) {
+void image_create(ImageCreateInfo *info, Image *image) {
         image->image = info->image;
 
         image->extent.width = info->extent.width;
@@ -40,7 +39,6 @@ bool image_create(ImageCreateInfo *info, Image *image) {
         };
 
         VK_EXPECT(vkCreateImageView(info->device, &create_info, NULL, &image->image_view));
-        return true;
 }
 
 void image_destroy(Image *image, VkDevice device) {
@@ -134,7 +132,7 @@ void image_buffer_copy(Image *dst, VkCommandBuffer cmd, VkBuffer buffer, VkExten
         vkCmdCopyBufferToImage(cmd, buffer, dst->image, dst->layout, 1, &copy_region);
 }
 
-bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image) {
+void allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *image) {
         VkImageCreateInfo create_info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
@@ -172,11 +170,11 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
             .device = vk_context_device(),
         };
 
-        ASSERT(image_create(&image_info, &image->image));
+        image_create(&image_info, &image->image);
 
         if (info->data) {
                 size_t size = info->extent.width * info->extent.height * info->extent.depth * 4;
-                Buffer staging_buffer;
+                buffer_t staging_buffer;
                 buffer_create(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY,
                               &staging_buffer);
                 vmaCopyMemoryToAllocation(vk_memory_allocator(), info->data,
@@ -192,8 +190,6 @@ bool allocated_image_create(AllocatedImageCreateInfo *info, AllocatedImage *imag
 
                 buffer_destroy(&staging_buffer);
         }
-
-        return true;
 }
 
 void allocated_image_destroy(AllocatedImage *image, VkDevice device) {

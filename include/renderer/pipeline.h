@@ -30,25 +30,22 @@ typedef struct {
 
         bool depth_testing;
         VkCompareOp depth_compare_op;
-} GraphicsPipelineCreateInfo;
+} graphics_pipeline_config_t;
 
 typedef struct {
         VkPipeline pipeline;
         VkPipelineLayout layout;
-} GraphicsPipeline;
+} graphics_pipeline_t;
 
-bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
-                              GraphicsPipeline *pipeline);
-
-GraphicsPipeline create_pbr_pipeline(VkDevice device, VkFormat format);
-
-void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device);
+graphics_pipeline_t graphics_pipeline_create(VkDevice device,
+                                             graphics_pipeline_config_t *create_info);
+void graphics_pipeline_destroy(graphics_pipeline_t *pipeline, VkDevice device);
 
 ///////////////////////////////////////
 /// Compute Pipeline
 ///////////////////////////////////////
 
-typedef struct {
+typedef struct compute_pipeline_config {
         VkDescriptorSetLayout *descriptors;
         uint32_t num_descriptors;
 
@@ -57,13 +54,12 @@ typedef struct {
 
         const uint32_t *shader_source;
         uint32_t shader_source_size;
-} ComputePipelineInfo;
+} comnpute_pipeline_config_t;
 
-typedef struct {
+typedef struct compute_pipeline {
         VkPipeline pipeline;
         VkPipelineLayout layout;
-} ComputePipeline;
+} compute_pipeline_t;
 
-bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, ComputePipeline *p);
-
-void compute_pipeline_destroy(ComputePipeline *p, VkDevice device);
+compute_pipeline_t compute_pipeline_create(VkDevice device, comnpute_pipeline_config_t *info);
+void compute_pipeline_destroy(compute_pipeline_t *p, VkDevice device);

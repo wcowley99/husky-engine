@@ -4,19 +4,19 @@
 
 #include <stdbool.h>
 
-typedef struct {
+typedef struct buffer {
         VkBuffer buffer;
         VmaAllocation allocation;
         VmaAllocationInfo info;
 
         int mapped;
-} Buffer;
+} buffer_t;
 
-void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, Buffer *buffer);
-void buffer_destroy(Buffer *buffer);
+void buffer_create(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage usage, buffer_t *buffer);
+void buffer_destroy(buffer_t *buffer);
 
-void *buffer_mmap(Buffer *buffer);
-void buffer_munmap(Buffer *buffer);
+void *buffer_mmap(buffer_t *buffer);
+void buffer_munmap(buffer_t *buffer);
 
 void vk_memory_allocator_init();
 void vk_memory_allocator_shutdown();

@@ -11,7 +11,7 @@ typedef enum {
         FRAME_BUFFER_INSTANCES,
 } frame_buffer_type_t;
 
-bool swapchain_create();
+void swapchain_create();
 void swapchain_destroy();
 void SwapchainRecreate();
 

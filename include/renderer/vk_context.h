@@ -1,10 +1,6 @@
 #pragma once
 
-#include "platform.h"
-
 #include "vkb.h"
-
-#include <SDL3/SDL.h>
 
 void vk_context_init();
 void vk_context_shutdown();

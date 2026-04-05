@@ -1,25 +1,32 @@
 #include "renderer/draw.h"
 
+#include "renderer/gpu_model.h"
 #include "renderer/renderer.h"
 #include "renderer/swapchain.h"
 
 #include "common/array.h"
 
-typedef struct {
+typedef struct render_object {
         uint32_t mesh;
         material_t material;
         mat4 transform;
 
         bool recorded;
-} RenderObject;
+} render_object_t;
 
-static RenderObject *g_render_objects;
-static DrawBatch *g_draw_batches;
+typedef struct draw_batch {
+        uint32_t first_instance;
+        uint32_t count;
+        uint32_t mesh;
+} draw_batch_t;
+
+static render_object_t *g_render_objects;
+static draw_batch_t *g_draw_batches;
 
 void renderable_record(GpuModel model, mat4 transform) {
         for (int i = 0; i < array_length(model.meshes); i++) {
                 GpuMesh mesh = model.meshes[i];
-                RenderObject obj = {
+                render_object_t obj = {
                     .material = mesh.material,
                     .mesh = mesh.mesh,
                     .recorded = false,
@@ -30,11 +37,11 @@ void renderable_record(GpuModel model, mat4 transform) {
         }
 }
 
-bool render_object_compatible(RenderObject a, RenderObject b) { return (a.mesh == b.mesh); }
+bool render_object_compatible(render_object_t a, render_object_t b) { return (a.mesh == b.mesh); }
 
 void draw_buffers_init() {
-        g_render_objects = array(RenderObject);
-        g_draw_batches = array(DrawBatch);
+        g_render_objects = array(render_object_t);
+        g_draw_batches = array(draw_batch_t);
 }
 
 void draw_buffers_shutdown() {
@@ -47,8 +54,8 @@ void draw_buffers_clear() {
         array_header(g_render_objects)->length = 0;
 }
 
-static void render_object_compact(RenderObject obj, Instance *ssbo, uint32_t *instance_count) {
-        DrawBatch draw_batch = {.mesh = obj.mesh, .first_instance = *instance_count};
+static void render_object_compact(render_object_t obj, Instance *ssbo, uint32_t *instance_count) {
+        draw_batch_t draw_batch = {.mesh = obj.mesh, .first_instance = *instance_count};
 
         for (int i = 0; i < array_length(g_render_objects); i++) {
                 if (g_render_objects[i].mesh == obj.mesh) {

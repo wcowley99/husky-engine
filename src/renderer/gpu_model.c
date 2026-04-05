@@ -1,5 +1,6 @@
 #include "renderer/gpu_model.h"
 
+#include "renderer/command.h"
 #include "renderer/image.h"
 #include "renderer/renderer.h"
 #include "renderer/sampler.h"
@@ -8,31 +9,31 @@
 
 #include "common/array.h"
 
-typedef struct {
-        Buffer vertex;
-        Buffer index;
+typedef struct mesh_buffer {
+        buffer_t vertex;
+        buffer_t index;
         VkDeviceAddress vertex_address;
 
         uint32_t num_indices;
-} MeshBuffer;
+} mesh_buffer_t;
 
-static MeshBuffer *g_MeshBuffers;
-static AllocatedImage *g_Textures;
+static mesh_buffer_t *g_mesh_buffers;
+static AllocatedImage *g_textures;
 
-static uint32_t mesh_buffer_create(Mesh *mesh) {
+static uint32_t mesh_buffer_create(mesh_t *mesh) {
         static int init = 0;
         if (!init) {
-                g_MeshBuffers = array(MeshBuffer);
-                g_Textures = array(AllocatedImage);
+                g_mesh_buffers = array(mesh_buffer_t);
+                g_textures = array(AllocatedImage);
                 init = 1;
         }
 
-        const size_t vertex_buffer_size = sizeof(Vertex) * array_length(mesh->vertices);
+        const size_t vertex_buffer_size = sizeof(vertex_t) * array_length(mesh->vertices);
         const size_t index_buffer_size = sizeof(uint32_t) * array_length(mesh->indices);
 
-        uint32_t index = array_length(g_MeshBuffers);
-        array_append(g_MeshBuffers, (MeshBuffer){0});
-        MeshBuffer *buffer = &g_MeshBuffers[index];
+        uint32_t index = array_length(g_mesh_buffers);
+        array_append(g_mesh_buffers, (mesh_buffer_t){0});
+        mesh_buffer_t *buffer = &g_mesh_buffers[index];
         buffer->num_indices = array_length(mesh->indices);
 
         buffer_create(vertex_buffer_size,
@@ -49,7 +50,7 @@ static uint32_t mesh_buffer_create(Mesh *mesh) {
         };
         buffer->vertex_address = vkGetBufferDeviceAddress(vk_context_device(), &address_info);
 
-        Buffer staging_buffer;
+        buffer_t staging_buffer;
         buffer_create(vertex_buffer_size + index_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VMA_MEMORY_USAGE_CPU_ONLY, &staging_buffer);
         vmaCopyMemoryToAllocation(vk_memory_allocator(), mesh->vertices, staging_buffer.allocation,
@@ -71,12 +72,12 @@ static uint32_t mesh_buffer_create(Mesh *mesh) {
         return index;
 }
 
-static void mesh_buffer_destroy(MeshBuffer *buffer) {
+static void mesh_buffer_destroy(mesh_buffer_t *buffer) {
         buffer_destroy(&buffer->vertex);
         buffer_destroy(&buffer->index);
 }
 
-uint32_t gpu_upload_texture(MaterialInfo *mats) {
+uint32_t gpu_upload_texture(material_info_t *mats) {
         AllocatedImageCreateInfo create_info = {
             .extent = (VkExtent3D){mats->diffuse_width, mats->diffuse_height, 1},
             .aspect_flags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -88,26 +89,26 @@ uint32_t gpu_upload_texture(MaterialInfo *mats) {
             .data = (uint32_t *)mats->diffuse_tex,
         };
 
-        uint32_t index = array_length(g_Textures);
-        array_append(g_Textures, (AllocatedImage){0});
-        AllocatedImage *image = &g_Textures[index];
+        uint32_t index = array_length(g_textures);
+        array_append(g_textures, (AllocatedImage){0});
+        AllocatedImage *image = &g_textures[index];
         allocated_image_create(&create_info, image);
 
-        swapchain_descriptors_write_texture(&g_Textures[index].image, index, linear_sampler());
+        swapchain_descriptors_write_texture(&g_textures[index].image, index, linear_sampler());
 
         return index;
 }
 
 GpuModel renderer_load_model(char *filename) {
-        Model m = load_model(filename);
+        model_t m = load_model(filename);
         GpuModel r;
         r.meshes = array(GpuMesh);
 
         DEBUG("#meshes = %zu, #materials = %zu", array_length(m.meshes), array_length(m.materials));
 
         for (int i = 0; i < array_length(m.meshes); i++) {
-                Mesh *cpu_mesh = &m.meshes[i];
-                MaterialInfo *material = &m.materials[cpu_mesh->material_index];
+                mesh_t *cpu_mesh = &m.meshes[i];
+                material_info_t *material = &m.materials[cpu_mesh->material_index];
                 GpuMesh mesh = {
                     .mesh = mesh_buffer_create(cpu_mesh),
                     .material.diffuse_tex = gpu_upload_texture(material),
@@ -122,20 +123,20 @@ GpuModel renderer_load_model(char *filename) {
 }
 
 void gpu_unload_models() {
-        for (int i = 0; i < array_length(g_MeshBuffers); i += 1) {
-                mesh_buffer_destroy(&g_MeshBuffers[i]);
+        for (int i = 0; i < array_length(g_mesh_buffers); i += 1) {
+                mesh_buffer_destroy(&g_mesh_buffers[i]);
         }
-        array_free(g_MeshBuffers);
+        array_free(g_mesh_buffers);
 
-        for (int i = 0; i < array_length(g_Textures); i += 1) {
-                allocated_image_destroy(&g_Textures[i], vk_context_device());
+        for (int i = 0; i < array_length(g_textures); i += 1) {
+                allocated_image_destroy(&g_textures[i], vk_context_device());
         }
-        array_free(g_Textures);
+        array_free(g_textures);
 }
 
-VkBuffer gpu_mesh_index_buffer(uint32_t mesh) { return g_MeshBuffers[mesh].index.buffer; }
-uint32_t gpu_mesh_index_count(uint32_t mesh) { return g_MeshBuffers[mesh].num_indices; }
+VkBuffer gpu_mesh_index_buffer(uint32_t mesh) { return g_mesh_buffers[mesh].index.buffer; }
+uint32_t gpu_mesh_index_count(uint32_t mesh) { return g_mesh_buffers[mesh].num_indices; }
 
 VkDeviceAddress gpu_mesh_vertex_address(uint32_t mesh) {
-        return g_MeshBuffers[mesh].vertex_address;
+        return g_mesh_buffers[mesh].vertex_address;
 }

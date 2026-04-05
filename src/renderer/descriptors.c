@@ -260,7 +260,7 @@ void descriptor_write_texture(Descriptor descriptor, Image *image, uint32_t bind
         vkUpdateDescriptorSets(descriptor.layout->device, 1, &write_set, 0, NULL);
 }
 
-void descriptor_write_buffer(Descriptor descriptor, Buffer *buffer, uint32_t binding,
+void descriptor_write_buffer(Descriptor descriptor, buffer_t *buffer, uint32_t binding,
                              uint32_t arr_index) {
         VkDescriptorBufferInfo buffer_info = {
             .buffer = buffer->buffer,

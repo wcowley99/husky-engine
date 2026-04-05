@@ -3,7 +3,7 @@
 #include "renderer/platform.h"
 #include "renderer/swapchain.h"
 
-void renderer_set_camera(Camera camera) {
+void renderer_set_camera(camera_t camera) {
         SceneData *scene = swapchain_current_frame_get_buffer(FRAME_BUFFER_CAMERA);
 
         // Vulkan internally uses an inverted Y-axis compared to cglm. That is, y=0 is the top of

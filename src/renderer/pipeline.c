@@ -13,8 +13,10 @@ static void create_shader_module(VkDevice device, const uint32_t *bytes, size_t 
         VK_EXPECT(vkCreateShaderModule(device, &create_info, NULL, module));
 }
 
-bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *create_info,
-                              GraphicsPipeline *pipeline) {
+graphics_pipeline_t graphics_pipeline_create(VkDevice device,
+                                             graphics_pipeline_config_t *create_info) {
+        graphics_pipeline_t p = {0};
+
         VkPipelineViewportStateCreateInfo viewport = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
@@ -118,7 +120,7 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
         };
 
         DEBUG("graphics descriptor: %p", *create_info->descriptors);
-        VK_EXPECT(vkCreatePipelineLayout(device, &layout_info, NULL, &pipeline->layout));
+        VK_EXPECT(vkCreatePipelineLayout(device, &layout_info, NULL, &p.layout));
 
         VkGraphicsPipelineCreateInfo pipeline_info = {
             .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -131,21 +133,21 @@ bool graphics_pipeline_create(VkDevice device, GraphicsPipelineCreateInfo *creat
             .pMultisampleState = &multisample,
             .pColorBlendState = &color_blend,
             .pDepthStencilState = &depth_testing,
-            .layout = pipeline->layout,
+            .layout = p.layout,
             .pDynamicState = &dynamic_state,
             .pNext = &render_info,
         };
 
         VK_EXPECT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
-                                            &pipeline->pipeline));
+                                            &p.pipeline));
 
         vkDestroyShaderModule(device, vertex, NULL);
         vkDestroyShaderModule(device, fragment, NULL);
 
-        return true;
+        return p;
 }
 
-void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device) {
+void graphics_pipeline_destroy(graphics_pipeline_t *pipeline, VkDevice device) {
         vkDestroyPipelineLayout(device, pipeline->layout, NULL);
         vkDestroyPipeline(device, pipeline->pipeline, NULL);
 }
@@ -154,7 +156,9 @@ void graphics_pipeline_destroy(GraphicsPipeline *pipeline, VkDevice device) {
 /// Compute Pipeline
 ///////////////////////////////////////
 
-bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, ComputePipeline *p) {
+compute_pipeline_t compute_pipeline_create(VkDevice device, comnpute_pipeline_config_t *info) {
+        compute_pipeline_t p = {0};
+
         VkPushConstantRange *ranges =
             malloc(info->num_push_constant_sizes * sizeof(VkPushConstantRange));
 
@@ -173,7 +177,7 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
             .pushConstantRangeCount = info->num_push_constant_sizes,
         };
 
-        VkResult result = vkCreatePipelineLayout(device, &layout_create_info, NULL, &p->layout);
+        VkResult result = vkCreatePipelineLayout(device, &layout_create_info, NULL, &p.layout);
         free(ranges);
         VK_EXPECT(result);
 
@@ -189,17 +193,18 @@ bool compute_pipeline_create(VkDevice device, ComputePipelineInfo *info, Compute
                     .module = compute,
                     .pName = "main",
                 },
-            .layout = p->layout,
+            .layout = p.layout,
         };
 
         result =
-            vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &p->pipeline);
+            vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &p.pipeline);
         vkDestroyShaderModule(device, compute, NULL);
         VK_EXPECT(result);
-        return true;
+
+        return p;
 }
 
-void compute_pipeline_destroy(ComputePipeline *p, VkDevice device) {
+void compute_pipeline_destroy(compute_pipeline_t *p, VkDevice device) {
         vkDestroyPipelineLayout(device, p->layout, NULL);
         vkDestroyPipeline(device, p->pipeline, NULL);
 }

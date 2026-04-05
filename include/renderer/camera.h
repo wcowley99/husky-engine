@@ -2,12 +2,12 @@
 
 #include <cglm/cglm.h>
 
-typedef struct {
+typedef struct camera {
         vec3 position;
         vec3 target;
         vec3 up;
 
         float fov;
-} Camera;
+} camera_t;
 
-void renderer_set_camera(Camera camera);
+void renderer_set_camera(camera_t camera);

@@ -23,8 +23,7 @@ attachment_handle_t render_graph_add_attachment(render_graph_t *graph, VkExtent3
             .usage_flags = usage,
         };
 
-        ASSERT(allocated_image_create(&allocated_image_info,
-                                      &graph->attachments[attachment_ref].image));
+        allocated_image_create(&allocated_image_info, &graph->attachments[attachment_ref].image);
 
         return attachment_ref;
 }

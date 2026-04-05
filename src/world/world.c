@@ -44,7 +44,7 @@ static void set_camera(ecs_iter_t *it) {
         position_t *p = ecs_field(it, position_t, 0);
         camera_target_t *t = ecs_field(it, camera_target_t, 1);
 
-        Camera camera = {
+        camera_t camera = {
             .fov = 45.0f,
             .up = {0.0f, 1.0f, 0.0f},
         };
